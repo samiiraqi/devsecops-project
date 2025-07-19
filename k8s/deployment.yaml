@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: devsecops-app
-        image: your-username/devsecops-app:latest
+        image: samiiraqi/devsecops-app:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 5000
