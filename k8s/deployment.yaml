@@ -1,11 +1,8 @@
 apiVersion: v1
 kind: Namespace
-metadata: 
+metadata:
   name: devsecops
 ---
-
-
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -56,6 +53,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: devsecops-service
+  namespace: devsecops 
 spec:
   selector:
     app: devsecops-app
@@ -65,6 +63,4 @@ spec:
       targetPort: 5000
       nodePort: 30001
   type: NodePort
-
----
 
