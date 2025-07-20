@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: devsecops-deployment
+  namespace: devsecops
   labels:
     app: devsecops-app
 spec:
@@ -56,3 +57,9 @@ spec:
       targetPort: 5000
       nodePort: 30001
   type: NodePort
+
+---
+apiVersion: v1
+kind: namespace
+metadata: 
+  name: devsecops

@@ -1,6 +1,5 @@
 from flask import Flask, render_template
 from app.utils import get_current_time, get_app_version, format_message, is_healthy
-import os
 
 app = Flask(__name__)
 
@@ -21,6 +20,5 @@ def current_time():
     return f"Current time: {get_current_time()}"
 
 if __name__ == '__main__':
-    # Production-safe: debug=False by default
-    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
-    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
+    # Always production-safe
+    app.run(host='0.0.0.0', port=5000, debug=False)
