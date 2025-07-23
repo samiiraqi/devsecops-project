@@ -1,3 +1,4 @@
+
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -61,6 +62,6 @@ spec:
     - protocol: TCP
       port: 5000
       targetPort: 5000
-      nodePort: 30001
-  type: NodePort
+      
+  type: LoadBalancer
 
