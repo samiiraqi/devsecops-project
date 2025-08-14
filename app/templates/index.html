@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask App - Terraform Modules + LoadBalancer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 15px;
+            text-align: center;
+        }
+        h1 {
+            color: #00ff88;
+            margin-bottom: 1rem;
+        }
+        .info-box {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+        }
+        .emoji {
+            font-size: 2rem;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="emoji">🚀</div>
+        <h1>Flask on EKS with LoadBalancer</h1>
+        <p>{{ message }}</p>
+        
+        <div class="info-box">
+            <h3>🏗️ Architecture</h3>
+            <p><strong>Infrastructure:</strong> Terraform Modules</p>
+            <p><strong>Load Balancer:</strong> Kubernetes LoadBalancer Service</p>
+            <p><strong>ALB Creation:</strong> Automatic by Kubernetes</p>
+        </div>
+        
+        <div class="info-box">
+            <h3>⏰ Info</h3>
+            <p><strong>Timestamp:</strong> {{ timestamp }}</p>
+            <p><strong>Version:</strong> 1.0.0</p>
+            <p><strong>Status:</strong> ✅ Running</p>
+        </div>
+        
+        <div class="info-box">
+            <h3>🔗 Endpoints</h3>
+            <p><a href="/health" style="color: #00ff88;">/health</a> - Health check</p>
+            <p><a href="/info" style="color: #00ff88;">/info</a> - App information</p>
+        </div>
+    </div>
+</body>
+</html>
