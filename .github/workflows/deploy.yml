@@ -1,12 +1,10 @@
-name: Build Push Deploy
+name: Simple Build & Deploy
 
 on:
   push:
     branches: [ main ]
 
-# Required so GitHub issues an OIDC token for the AWS role
 permissions:
-  id-token: write
   contents: read
 
 env:
@@ -18,112 +16,76 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    # Use static access keys from repo secrets
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Fail fast if the role secret is missing
-      - name: Verify AWS_ROLE_ARN secret
-        env:
-          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      - name: Verify AWS keys and identity
         run: |
-          if [ -z "$ROLE_ARN" ]; then
-            echo "❌ Missing secret AWS_ROLE_ARN. Add it in Settings → Secrets → Actions."; exit 1
+          set -e
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "❌ Missing AWS secrets. Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."; exit 1
           fi
-          echo "✅ AWS_ROLE_ARN is set"
+          aws sts get-caller-identity
+          echo "✅ AWS creds ok"
 
-      # Assume the AWS role via OIDC
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      # Prove AWS auth works
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity
-
-      # Login to ECR and ensure repository exists (pure CLI)
-      - name: Login to ECR and ensure repository
+      - name: Login to ECR (ensure repo exists)
         run: |
-          set -euo pipefail
+          set -e
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
           echo "ECR_REGISTRY=${ECR_REGISTRY}" >> $GITHUB_ENV
+          # create repo if missing
+          aws ecr describe-repositories --repository-names "${ECR_REPO}" >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name "${ECR_REPO}" >/dev/null
+          # login
           aws ecr get-login-password --region "${AWS_REGION}" \
             | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
-          if ! aws ecr describe-repositories --repository-names "${ECR_REPO}" >/dev/null 2>&1; then
-            aws ecr create-repository --repository-name "${ECR_REPO}" >/dev/null
-          fi
-          aws ecr describe-repositories --repository-names "${ECR_REPO}"
+          echo "✅ Logged in to ${ECR_REGISTRY}"
 
-      # Build & push your Flask image
-      - name: Build and push image
+      - name: Build & push image
         run: |
-          set -euo pipefail
+          set -e
           IMAGE="${ECR_REGISTRY}/${ECR_REPO}:latest"
           echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
+          echo "Building ${IMAGE}"
           docker build -t "${IMAGE}" .
           docker push "${IMAGE}"
 
-      # Install kubectl without extra actions
       - name: Install kubectl
         run: |
-          set -euo pipefail
+          set -e
           VER="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
           curl -LO "https://dl.k8s.io/release/${VER}/bin/linux/amd64/kubectl"
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/
           kubectl version --client=true
 
-      # Connect kubectl and verify cluster
-      - name: Update kubeconfig & verify cluster
+      - name: Update kubeconfig & verify
         run: |
-          set -euo pipefail
+          set -e
           aws eks update-kubeconfig --region "${AWS_REGION}" --name "${CLUSTER_NAME}"
           kubectl get nodes
 
-      # Apply your manifests (Namespace + Deployment + Service)
-      - name: Apply Kubernetes manifests
+      - name: Apply manifests
         run: |
-          set -euo pipefail
+          set -e
           kubectl apply -f k8s/test.yaml
           kubectl -n "${NAMESPACE}" get deploy,svc -o wide
 
-      # Point the Deployment to the new ECR image and wait
-      - name: Set image and rollout
+      - name: Update deployment image & rollout
         run: |
-          set -euo pipefail
+          set -e
           kubectl -n "${NAMESPACE}" set image deploy/python-app python-app="${IMAGE}" --record
           kubectl -n "${NAMESPACE}" rollout status deploy/python-app --timeout=5m
           kubectl -n "${NAMESPACE}" get pods -o wide
 
-      # Wait for NLB DNS to appear
-      - name: Wait for LoadBalancer DNS
-        id: lb
-        run: |
-          set -euo pipefail
-          for i in {1..30}; do
-            DNS=$(kubectl get svc -n "${NAMESPACE}" python-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || true)
-            if [ -n "$DNS" ]; then echo "dns=$DNS" >> $GITHUB_OUTPUT; echo "✅ LB DNS: $DNS"; exit 0; fi
-            echo "Waiting for LB... ($i/30)"; sleep 10
-          done
-          echo "❌ Timed out waiting for LoadBalancer"; exit 1
-
-      # Smoke test your app
-      - name: Health check
-        run: |
-          set -euo pipefail
-          URL="http://${{ steps.lb.outputs.dns }}/health"
-          echo "Hitting $URL"
-          for i in {1..30}; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || true)
-            if [ "$code" = "200" ]; then echo "✅ Health OK"; exit 0; fi
-            echo "Health not ready (HTTP $code), retry $i/30"; sleep 5
-          done
-          echo "❌ Health check failed"; exit 1
-
-      # Print the public URL
       - name: Show Service address
         run: |
           kubectl get svc -n "${NAMESPACE}" -o wide
-          echo "Open: http://${{ steps.lb.outputs.dns }}/"
