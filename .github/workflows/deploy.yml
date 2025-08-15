@@ -5,59 +5,60 @@ on:
     branches:
       - main
 
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: devsecops
+  NAMESPACE: devsecops
+  ECR_REPO: devsecops
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install AWS CLI
-        uses: aws-actions/setup-aws-cli@v2
-
-      # Decide auth method without using 'secrets' in an if:
+      # Require OIDC role; fail early if not set
       - name: Decide auth method
         id: auth
         env:
           ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
         run: |
-          if [ -n "$ROLE_ARN" ]; then
-            echo "method=oidc" >> $GITHUB_OUTPUT
-          else
-            echo "method=keys" >> $GITHUB_OUTPUT
+          if [ -z "$ROLE_ARN" ]; then
+            echo "Missing secret AWS_ROLE_ARN. Set it in Settings > Secrets > Actions."; exit 1
           fi
+          echo "method=oidc" >> $GITHUB_OUTPUT
 
-      # OIDC path (runs only if you set AWS_ROLE_ARN secret)
       - name: Configure AWS via OIDC
-        if: steps.auth.outputs.method == 'oidc'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
-      # Static access keys path (runs only if no AWS_ROLE_ARN secret)
-      - name: Configure AWS via access keys
-        if: steps.auth.outputs.method == 'keys'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: us-east-1
-
+      # Install kubectl without external actions (works on GH.com & restricted orgs)
       - name: Install kubectl
-        uses: azure/setup-kubectl@v4
+        run: |
+          set -euo pipefail
+          VER="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
+          curl -LO "https://dl.k8s.io/release/${VER}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl version --client=true
 
-      - name: Login to Amazon ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      # Login to ECR (manual, no action)
+      - name: Login to ECR
+        run: |
+          set -euo pipefail
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          aws ecr get-login-password --region "${AWS_REGION}" \
+            | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+          echo "ECR_REGISTRY=${ECR_REGISTRY}" >> $GITHUB_ENV
 
       - name: Build and push image
-        env:
-          ECR_REPO: devsecops
         run: |
-          IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPO}:latest"
+          set -euo pipefail
+          IMAGE="${ECR_REGISTRY}/${ECR_REPO}:latest"
           echo "Building $IMAGE"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
@@ -65,23 +66,44 @@ jobs:
 
       - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig --region us-east-1 --name devsecops
-          kubectl version --client=true
-          kubectl cluster-info
+          set -euo pipefail
+          aws eks update-kubeconfig --region "${AWS_REGION}" --name "${CLUSTER_NAME}"
+          kubectl get nodes
 
-      - name: Ensure namespace exists
+      - name: Apply manifests
         run: |
-          kubectl get ns devsecops || kubectl create ns devsecops
-
-      - name: Deploy manifests
-        run: |
+          set -euo pipefail
           kubectl apply -f k8s/test.yaml
 
       - name: Set image and rollout
         run: |
-          kubectl set image -n devsecops deploy/python-app python-app="$IMAGE" --record
-          kubectl rollout status -n devsecops deploy/python-app
+          set -euo pipefail
+          kubectl -n "${NAMESPACE}" set image deploy/python-app python-app="${IMAGE}" --record
+          kubectl -n "${NAMESPACE}" rollout status deploy/python-app --timeout=5m
+
+      - name: Wait for LoadBalancer DNS
+        id: lb
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            DNS=$(kubectl get svc -n "${NAMESPACE}" python-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || true)
+            if [ -n "$DNS" ]; then echo "dns=$DNS" >> $GITHUB_OUTPUT; exit 0; fi
+            echo "Waiting for LB... ($i/30)"; sleep 10
+          done
+          echo "Timed out waiting for LoadBalancer"; exit 1
+
+      - name: Health check
+        run: |
+          set -euo pipefail
+          echo "Hitting http://${{ steps.lb.outputs.dns }}/health"
+          for i in {1..30}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://${{ steps.lb.outputs.dns }}/health" || true)
+            if [ "$code" = "200" ]; then echo "OK"; exit 0; fi
+            echo "Health not ready (HTTP $code), retry $i/30"; sleep 5
+          done
+          echo "Health check failed"; exit 1
 
       - name: Show Service address
         run: |
-          kubectl get svc -n devsecops -o wide
+          kubectl get svc -n "${NAMESPACE}" -o wide
+          echo "Open: http://${{ steps.lb.outputs.dns }}/"
