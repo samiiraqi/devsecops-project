@@ -35,10 +35,11 @@ module "github_oidc" {
   repo_full_name        = "samiiraqi/flask-app-k8s"
   branch_ref            = "refs/heads/main"
 
-  # ✅ Let Terraform create the OIDC provider instead of expecting existing one
-  use_existing_provider = false
-  existing_provider_arn = null
+  # ✅ Use the existing AWS OIDC provider
+  use_existing_provider = true
+  existing_provider_arn = "arn:aws:iam::156041402173:oidc-provider/token.actions.githubusercontent.com"
 }
+
 
 # ---------------- EKS ----------------
 module "eks" {
