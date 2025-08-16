@@ -8,8 +8,6 @@ kind: Deployment
 metadata:
   name: python-app
   namespace: devsecops
-  labels:
-    app: python-app
 spec:
   replicas: 2
   selector:
@@ -22,47 +20,43 @@ spec:
     spec:
       containers:
         - name: python-app
-          # Placeholder; CI sets the real image
-          image: public.ecr.aws/docker/library/python:3.10-slim
+          image: public.ecr.aws/docker/library/python:3.10-slim  # CI will overwrite to your ECR image
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
           env:
             - name: FLASK_ENV
               value: "production"
-            - name: PORT
-              value: "5000"
+            - name: AUDIO_URL
+              value: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"  # <— remote MP3 here
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 1000
-            capabilities:
-              drop: ["ALL"]
-          readinessProbe:
-            httpGet: { path: /health, port: 5000 }
-            initialDelaySeconds: 5
-            periodSeconds: 5
+            capabilities: { drop: ["ALL"] }
           livenessProbe:
             httpGet: { path: /health, port: 5000 }
             initialDelaySeconds: 30
             periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: 5000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: python-app-service
   namespace: devsecops
-  annotations:
-    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
-    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
 spec:
   selector:
     app: python-app
+  ports:
+    - port: 80
+      targetPort: 5000
   type: LoadBalancer
   externalTrafficPolicy: Local
-  ports:
-    - name: http
-      port: 80
-      targetPort: 5000
-      protocol: TCP
