@@ -13,14 +13,14 @@ variable "kubernetes_version" {
   default = "1.28"
 }
 
-variable "dynamodb_table_name" {
-  type    = string
-  default = "app-table"
-}
-
 variable "s3_bucket_name" {
   type    = string
   default = "devsecops-bucket"
+}
+
+variable "dynamodb_table_name" {
+  type    = string
+  default = "app-table"
 }
 
 variable "desired_size" {
@@ -40,5 +40,7 @@ variable "max_size" {
 
 variable "instance_types" {
   type    = list(string)
-  default = ["t3.medium"]
+  default = [
+    "t3.medium"
+  ]
 }
