@@ -38,7 +38,7 @@
       <div><small>Updated: {{ timestamp }}</small></div>
     </div>
 
-    <!-- Use the server-provided audio_url (env var or local static) -->
+    <!-- Use server-provided audio_url -->
     <audio id="bg-music" autoplay muted loop playsinline preload="auto" crossorigin="anonymous">
       <source id="audio-src" src="{{ audio_url }}" type="audio/mpeg" />
       Your browser does not support the audio element.
@@ -61,7 +61,7 @@
       const vol = document.getElementById('volume');
       const volVal = document.getElementById('volVal');
 
-      const TARGET_VOLUME = 0.60; // 60%
+      const TARGET_VOLUME = 0.60;
       const FADE_MS = 2500;
 
       audio.volume = 0.0;
