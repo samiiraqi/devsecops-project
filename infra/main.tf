@@ -27,18 +27,17 @@ module "vpc" {
   private_bits = 8
 }
 
-# ----------- GitHub OIDC (secure) -----------
+# ----------- GitHub OIDC -----------
 module "github_oidc" {
   source = "./modules/github_oidc"
 
   cluster_name          = var.cluster_name
-  repo_full_name        = "samiiraqi/flask-app-k8s"
+  repo_full_name        = "samiiraqi/flask-app-k8s"   # <--- must match your GitHub owner/repo
   branch_ref            = "refs/heads/main"
-
-  # ✅ Use the existing AWS OIDC provider
-  use_existing_provider = true
-  existing_provider_arn = "arn:aws:iam::156041402173:oidc-provider/token.actions.githubusercontent.com"
+  use_existing_provider = false                        # <--- ensure provider is CREATED
+  existing_provider_arn = null
 }
+
 
 
 # ---------------- EKS ----------------
