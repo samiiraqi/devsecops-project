@@ -39,7 +39,7 @@ variable "max_size" {
 }
 
 variable "instance_types" {
-  type    = list(string)
+  type = list(string)
   default = [
     "t3.medium"
   ]

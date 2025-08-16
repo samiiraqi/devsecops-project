@@ -2,8 +2,7 @@ name: Build Push Deploy (OIDC)
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 permissions:
   id-token: write
@@ -21,17 +20,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Fail if AWS_ACCOUNT_ID is not set
-        run: |
-          if [ -z "${AWS_ACCOUNT_ID}" ]; then
-            echo "::error::GitHub variable AWS_ACCOUNT_ID is not set. Add it in Settings → Variables → Actions."
-            exit 1
-          fi
-
-      - name: Configure AWS credentials via OIDC
+      - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.ROLE_ARN }}
@@ -40,8 +31,9 @@ jobs:
       - name: Verify AWS identity
         run: aws sts get-caller-identity
 
-      - name: Login to ECR
+      - name: Login to ECR (ensure repo exists)
         run: |
+          set -euo pipefail
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
           echo "ECR_REGISTRY=${ECR_REGISTRY}" >> $GITHUB_ENV
           aws ecr describe-repositories --repository-names "${ECR_REPO}" >/dev/null 2>&1 || \
@@ -49,8 +41,9 @@ jobs:
           aws ecr get-login-password --region "${AWS_REGION}" \
             | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
-      - name: Build & push Docker image
+      - name: Build & push image
         run: |
+          set -euo pipefail
           IMAGE="${ECR_REGISTRY}/${ECR_REPO}:latest"
           echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
           docker build -t "${IMAGE}" .
@@ -58,27 +51,28 @@ jobs:
 
       - name: Install kubectl
         run: |
+          set -e
           VER="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
           curl -LO "https://dl.k8s.io/release/${VER}/bin/linux/amd64/kubectl"
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/
           kubectl version --client=true
 
-      - name: Configure kubeconfig for EKS
+      - name: Update kubeconfig & verify
         run: |
+          set -e
           aws eks update-kubeconfig --region "${AWS_REGION}" --name "${CLUSTER_NAME}"
-          kubectl cluster-info
+          kubectl get nodes
 
-      - name: Apply Kubernetes manifests
+      - name: Apply manifests
         run: |
+          set -e
           kubectl apply -f k8s/test.yaml
           kubectl -n "${NAMESPACE}" get deploy,svc -o wide || true
 
-      - name: Update deployment image
+      - name: Set image & rollout
         run: |
+          set -e
           kubectl -n "${NAMESPACE}" set image deploy/python-app python-app="${IMAGE}" --record
-
-      - name: Wait for rollout
-        run: |
           kubectl -n "${NAMESPACE}" rollout status deploy/python-app --timeout=5m
           kubectl -n "${NAMESPACE}" get pods -o wide
 

@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: python-app
-          image: public.ecr.aws/docker/library/python:3.10-slim  # CI will overwrite to your ECR image
+          image: public.ecr.aws/docker/library/python:3.10-slim  # CI overwrites to your ECR image
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
@@ -34,7 +34,8 @@ spec:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 1000
-            capabilities: { drop: ["ALL"] }
+            capabilities:
+              drop: ["ALL"]
           livenessProbe:
             httpGet: { path: /health, port: 5000 }
             initialDelaySeconds: 30

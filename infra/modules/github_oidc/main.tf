@@ -1,5 +1,3 @@
-# infra/modules/github_oidc/main.tf
-
 resource "aws_iam_openid_connect_provider" "github" {
   count          = var.use_existing_provider ? 0 : 1
   url            = "https://token.actions.githubusercontent.com"
@@ -24,14 +22,14 @@ resource "aws_iam_role" "gha_role" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
-      Effect = "Allow",
-      Action = "sts:AssumeRoleWithWebIdentity",
+      Effect    = "Allow",
+      Action    = "sts:AssumeRoleWithWebIdentity",
       Principal = { Federated = local.provider_arn },
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         },
-        # IMPORTANT: include "ref:" before refs/heads/main
+        # IMPORTANT: subject must include "ref:"
         StringLike = {
           "token.actions.githubusercontent.com:sub" = "repo:${var.repo_full_name}:ref:${var.branch_ref}"
         }
@@ -61,8 +59,4 @@ resource "aws_iam_policy" "gha_eks_read" {
 resource "aws_iam_role_policy_attachment" "gha_eks_read_attach" {
   role       = aws_iam_role.gha_role.name
   policy_arn = aws_iam_policy.gha_eks_read.arn
-}
-
-output "role_arn" {
-  value = aws_iam_role.gha_role.arn
 }

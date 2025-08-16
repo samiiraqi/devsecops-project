@@ -17,7 +17,7 @@ locals {
   azs  = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 
-# ---------------- VPC ----------------
+# ---------- VPC ----------
 module "vpc" {
   source       = "./modules/vpc"
   name         = local.name
@@ -27,18 +27,20 @@ module "vpc" {
   private_bits = 8
 }
 
+# ---------- GitHub OIDC ----------
 module "github_oidc" {
-  source               = "./modules/github_oidc"
-  cluster_name         = var.cluster_name
-  repo_full_name       = "samiiraqi/flask-app-k8s"
-  branch_ref           = "refs/heads/main"
+  source = "./modules/github_oidc"
+
+  cluster_name   = var.cluster_name
+  repo_full_name = "samiiraqi/flask-app-k8s" # <-- change if your repo name differs
+  branch_ref     = "refs/heads/main"
+
+  # Let Terraform create the OIDC provider (simple & reliable)
   use_existing_provider = false
   existing_provider_arn = null
 }
 
-
-
-# ---------------- EKS ----------------
+# ---------- EKS ----------
 module "eks" {
   source             = "./modules/eks"
   cluster_name       = var.cluster_name
@@ -70,13 +72,13 @@ module "eks" {
   ]
 }
 
-# ---------------- ECR ----------------
+# ---------- ECR ----------
 module "ecr" {
   source          = "./modules/ecr"
   repository_name = var.cluster_name
 }
 
-# --------------- Storage ---------------
+# ---------- Storage ----------
 module "storage" {
   source              = "./modules/storage"
   bucket_name_prefix  = var.s3_bucket_name
@@ -84,11 +86,7 @@ module "storage" {
   dynamodb_table_name = var.dynamodb_table_name
 }
 
-# ======================================================================
-# KUBERNETES PROVIDER (fixes: tries to reach http://localhost for aws-auth)
-# ======================================================================
-
-# Read cluster connection details after the cluster exists
+# ---------- K8s Provider (for aws-auth etc.) ----------
 data "aws_eks_cluster" "eks" {
   name = module.eks.cluster_name
 }
@@ -97,7 +95,6 @@ data "aws_eks_cluster_auth" "eks" {
   name = module.eks.cluster_name
 }
 
-# Use token-based auth to talk to the cluster from Terraform
 provider "kubernetes" {
   host                   = data.aws_eks_cluster.eks.endpoint
   cluster_ca_certificate = base64decode(data.aws_eks_cluster.eks.certificate_authority[0].data)
