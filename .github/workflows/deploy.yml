@@ -1,10 +1,12 @@
-name: Simple Build & Deploy
+name: Build Push Deploy (OIDC)
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 permissions:
+  id-token: write
   contents: read
 
 env:
@@ -12,80 +14,111 @@ env:
   CLUSTER_NAME: devsecops
   NAMESPACE: devsecops
   ECR_REPO: devsecops
+  # Provide this in repo Settings → Variables → Actions
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  ROLE_ARN: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/devsecops-github-actions-role
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
-    # Use static access keys from repo secrets
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify AWS keys and identity
+      - name: Show computed env
         run: |
-          set -e
-          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-            echo "❌ Missing AWS secrets. Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."; exit 1
+          echo "AWS_REGION=${AWS_REGION}"
+          echo "CLUSTER_NAME=${CLUSTER_NAME}"
+          echo "NAMESPACE=${NAMESPACE}"
+          echo "ECR_REPO=${ECR_REPO}"
+          echo "AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}"
+          echo "ROLE_ARN=${ROLE_ARN}"
+
+      - name: Fail early if AWS_ACCOUNT_ID not set
+        run: |
+          if [ -z "${AWS_ACCOUNT_ID}" ]; then
+            echo "::error::GitHub variable AWS_ACCOUNT_ID is not set. Add it in Settings → Variables → Actions."
+            exit 1
           fi
-          aws sts get-caller-identity
-          echo "✅ AWS creds ok"
+
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
 
       - name: Login to ECR (ensure repo exists)
         run: |
-          set -e
-          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          set -euo pipefail
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
           echo "ECR_REGISTRY=${ECR_REGISTRY}" >> $GITHUB_ENV
-          # create repo if missing
           aws ecr describe-repositories --repository-names "${ECR_REPO}" >/dev/null 2>&1 || \
             aws ecr create-repository --repository-name "${ECR_REPO}" >/dev/null
-          # login
           aws ecr get-login-password --region "${AWS_REGION}" \
             | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
-          echo "✅ Logged in to ${ECR_REGISTRY}"
 
       - name: Build & push image
         run: |
-          set -e
+          set -euo pipefail
           IMAGE="${ECR_REGISTRY}/${ECR_REPO}:latest"
           echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
-          echo "Building ${IMAGE}"
           docker build -t "${IMAGE}" .
           docker push "${IMAGE}"
 
       - name: Install kubectl
         run: |
-          set -e
+          set -euo pipefail
           VER="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
           curl -LO "https://dl.k8s.io/release/${VER}/bin/linux/amd64/kubectl"
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/
           kubectl version --client=true
 
-      - name: Update kubeconfig & verify
+      - name: Update kubeconfig & verify EKS
         run: |
-          set -e
+          set -euo pipefail
+          aws eks describe-cluster --name "${CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
           aws eks update-kubeconfig --region "${AWS_REGION}" --name "${CLUSTER_NAME}"
-          kubectl get nodes
+          kubectl cluster-info
 
       - name: Apply manifests
         run: |
-          set -e
+          set -euo pipefail
           kubectl apply -f k8s/test.yaml
-          kubectl -n "${NAMESPACE}" get deploy,svc -o wide
+          kubectl -n "${NAMESPACE}" get deploy,svc -o wide || true
 
-      - name: Update deployment image & rollout
+      - name: Wait for deployment to exist (retry)
         run: |
-          set -e
+          set -euo pipefail
+          for i in {1..20}; do
+            if kubectl -n "${NAMESPACE}" get deploy/python-app >/dev/null 2>&1; then
+              echo "Deployment exists."
+              exit 0
+            fi
+            echo "Waiting for deploy/python-app to be created... (${i}/20)"
+            sleep 6
+          done
+          echo "::error::Deployment python-app not found after waiting."
+          kubectl -n "${NAMESPACE}" get all
+          exit 1
+
+      - name: Update deployment image
+        run: |
+          set -euo pipefail
           kubectl -n "${NAMESPACE}" set image deploy/python-app python-app="${IMAGE}" --record
+
+      - name: Wait for rollout
+        run: |
+          set -euo pipefail
           kubectl -n "${NAMESPACE}" rollout status deploy/python-app --timeout=5m
           kubectl -n "${NAMESPACE}" get pods -o wide
 
       - name: Show Service address
+        run: kubectl get svc -n "${NAMESPACE}" -o wide
+
+      - name: Dump last events on failure
+        if: failure()
         run: |
-          kubectl get svc -n "${NAMESPACE}" -o wide
+          kubectl -n "${NAMESPACE}" get events --sort-by=.lastTimestamp | tail -n 50 || true
