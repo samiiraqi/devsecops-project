@@ -27,14 +27,12 @@ module "vpc" {
   private_bits = 8
 }
 
-# ----------- GitHub OIDC -----------
 module "github_oidc" {
-  source = "./modules/github_oidc"
-
-  cluster_name          = var.cluster_name
-  repo_full_name        = "samiiraqi/flask-app-k8s"   # <--- must match your GitHub owner/repo
-  branch_ref            = "refs/heads/main"
-  use_existing_provider = false                        # <--- ensure provider is CREATED
+  source               = "./modules/github_oidc"
+  cluster_name         = var.cluster_name
+  repo_full_name       = "samiiraqi/flask-app-k8s"
+  branch_ref           = "refs/heads/main"
+  use_existing_provider = false
   existing_provider_arn = null
 }
 
