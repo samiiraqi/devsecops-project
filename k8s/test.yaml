@@ -28,7 +28,7 @@ spec:
             - name: FLASK_ENV
               value: "production"
             - name: AUDIO_URL
-              value: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"  # <— remote MP3 here
+              value: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
           resources:
             requests: { cpu: "200m", memory: "256Mi" }
             limits:   { cpu: "500m", memory: "512Mi" }
