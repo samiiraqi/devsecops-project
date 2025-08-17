@@ -1,4 +1,4 @@
-name: Build Push Deploy (OIDC)
+name: CI/CD to EKS (OIDC)
 
 on:
   push:
@@ -21,6 +21,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # === Tests; if these fail, nothing else runs ===
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps for tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run pytest
+        run: PYTHONPATH=. pytest -q
+      # === end tests ===
 
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
