@@ -31,11 +31,8 @@ module "vpc" {
 module "github_oidc" {
   source = "./modules/github_oidc"
 
-  cluster_name   = var.cluster_name
-  repo_full_name = "samiiraqi/flask-app-k8s" # <-- change if your repo name differs
-  branch_ref     = "refs/heads/main"
-
-  # Let Terraform create the OIDC provider (simple & reliable)
+  cluster_name          = var.cluster_name
+  repo_full_name        = "samiiraqi/flask-app-k8s" # <-- EXACT org/repo
   use_existing_provider = false
   existing_provider_arn = null
 }
@@ -52,24 +49,6 @@ module "eks" {
   desired_size   = var.desired_size
   min_size       = var.min_size
   max_size       = var.max_size
-
-  # local admin
-  aws_auth_users = [
-    {
-      userarn  = "arn:aws:iam::156041402173:user/sami"
-      username = "sami"
-      groups   = ["system:masters"]
-    }
-  ]
-
-  # GitHub Actions role can kubectl
-  aws_auth_roles = [
-    {
-      rolearn  = module.github_oidc.role_arn
-      username = "github-actions"
-      groups   = ["system:masters"]
-    }
-  ]
 }
 
 # ---------- ECR ----------
@@ -78,25 +57,10 @@ module "ecr" {
   repository_name = var.cluster_name
 }
 
-# ---------- Storage ----------
+# ---------- Storage (optional) ----------
 module "storage" {
   source              = "./modules/storage"
   bucket_name_prefix  = var.s3_bucket_name
   random_suffix       = random_string.suffix.result
   dynamodb_table_name = var.dynamodb_table_name
-}
-
-# ---------- K8s Provider (for aws-auth etc.) ----------
-data "aws_eks_cluster" "eks" {
-  name = module.eks.cluster_name
-}
-
-data "aws_eks_cluster_auth" "eks" {
-  name = module.eks.cluster_name
-}
-
-provider "kubernetes" {
-  host                   = data.aws_eks_cluster.eks.endpoint
-  cluster_ca_certificate = base64decode(data.aws_eks_cluster.eks.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.eks.token
 }

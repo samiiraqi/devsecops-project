@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: python-app
-          image: public.ecr.aws/docker/library/python:3.10-slim  # CI overwrites to your ECR image
+          image: 156041402173.dkr.ecr.us-east-1.amazonaws.com/devsecops:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
@@ -44,6 +44,17 @@ spec:
             httpGet: { path: /health, port: 5000 }
             initialDelaySeconds: 5
             periodSeconds: 5
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["python-app"]
+                topologyKey: "kubernetes.io/hostname"
 ---
 apiVersion: v1
 kind: Service

@@ -29,13 +29,3 @@ variable "min_size" {
 variable "max_size" {
   type = number
 }
-
-variable "aws_auth_users" {
-  type    = any
-  default = []
-}
-
-variable "aws_auth_roles" {
-  type    = any
-  default = []
-}

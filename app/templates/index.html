@@ -1,56 +1,89 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Flask on EKS</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Greeting App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4F46E5',
+                        secondary: '#10B981',
+                        dark: '#1F2937',
+                    }
+                }
+            }
+        }
+    </script>
 </head>
-<body class="bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 min-h-screen flex items-center justify-center p-6">
-  <div class="bg-white bg-opacity-10 backdrop-blur-md rounded-3xl max-w-xl w-full p-10 shadow-lg text-indigo-100 font-sans">
-    <h1 class="text-4xl font-extrabold mb-3 drop-shadow-lg">Flask on EKS</h1>
 
-    <p class="mb-2">{{ message }}</p>
-    <small class="text-indigo-400 block mb-6">Updated: {{ timestamp }}</small>
-
-    <hr class="border-indigo-600 mb-6" />
-
-    <button
-      onclick="showWelcome()"
-      class="px-6 py-3 bg-purple-700 hover:bg-purple-800 active:bg-purple-900 rounded-xl text-white font-semibold shadow-md transition duration-300 ease-in-out select-none focus:outline-none focus:ring-4 focus:ring-purple-400">
-       Click to show
-    </button>
-
-    <div id="welcome" class="mt-8 hidden p-6 bg-purple-800 bg-opacity-60 rounded-xl shadow-inner animate-fadeIn">
-      <p class="text-lg font-semibold mb-2">Welcome to our project: <span class="text-yellow-300">devsecops-project</span></p>
-      <p class="mb-1">By: <b>Sami</b> + <b>Anan</b></p>
-      <p class="mb-4">With the support of our lecturer, <b>Yuval Shaul</b></p>
-      <p class="mb-4 text-yellow-300 text-xl font-semibold">Enjoy! </p>
-
-      <div class="bg-purple-900 p-4 rounded-lg shadow-lg border border-purple-700">
-        <p class="font-bold mb-2 text-indigo-200">🔐 What is DevSecOps?</p>
-        <p class="text-indigo-300 leading-relaxed">
-          DevSecOps is a mindset and practice that integrates security into every part of the DevOps pipeline.
-          It ensures that code is not only fast and reliable, but also safe from the start.
-          Security becomes a shared responsibility — from development to deployment.
-        </p>
-      </div>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div
+        class="container max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden transform transition-all hover:shadow-xl">
+        <div class="p-8">
+            <div class="text-center">
+                <h1 class="text-3xl font-bold text-gray-800 mb-6">Welcome to Greeting App</h1>
+                <div class="mb-6">
+                    <span
+                        class="inline-block bg-primary text-white text-xs px-2 py-1 rounded-full uppercase font-semibold tracking-wide">v8</span>
+                </div>
+                <div class="space-y-4">
+                    <div class="flex flex-col sm:flex-row gap-2 justify-center">
+                        <input type="text" id="nameInput" placeholder="Enter your name"
+                            class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" />
+                        <button onclick="getGreeting()"
+                            class="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-green-600 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50">
+                            Get Greeting
+                        </button>
+                    </div>
+                    <button onclick="window.location.href='/change-greeting'"
+                        class="w-full px-4 py-2 bg-primary text-white rounded-lg hover:bg-indigo-600 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50">
+                        Change Word
+                    </button>
+                </div>
+                <div id="result" class="mt-6 p-4 min-h-16 text-lg font-medium text-gray-700 bg-gray-50 rounded-lg">
+                </div>
+            </div>
+        </div>
     </div>
-  </div>
 
-  <script>
-    function showWelcome() {
-      const welcome = document.getElementById("welcome");
-      if (welcome.classList.contains("hidden")) {
-        welcome.classList.remove("hidden");
-      }
-      welcome.scrollIntoView({ behavior: "smooth" });
-    }
-  </script>
+    <script>
+        async function getGreeting() {
+            const name = document.getElementById( 'nameInput' ).value;
+            const resultDiv = document.getElementById( 'result' );
 
-  <style>
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .animate-fadeIn { animation: fadeIn 0.8s ease forwards; }
-  </style>
+            if ( !name ) {
+                resultDiv.textContent = 'Please enter a name';
+                resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
+                return;
+            }
+
+            try {
+                resultDiv.textContent = 'Loading...';
+                resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-gray-700 bg-gray-50 rounded-lg';
+
+                const response = await fetch( `/greet/${name}` );
+                const data = await response.json();
+
+                resultDiv.textContent = data.message;
+                resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-green-600 bg-green-50 rounded-lg';
+            } catch ( error ) {
+                resultDiv.textContent = 'Error getting greeting';
+                resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
+            }
+        }
+
+        // Allow Enter key to trigger the greeting
+        document.getElementById( 'nameInput' ).addEventListener( 'keypress', function ( e ) {
+            if ( e.key === 'Enter' ) {
+                getGreeting();
+            }
+        } );
+    </script>
 </body>
+
 </html>

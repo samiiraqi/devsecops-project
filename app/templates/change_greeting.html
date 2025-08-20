@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Change Greeting Word</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4F46E5',
+                        secondary: '#10B981',
+                        dark: '#1F2937',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div
+        class="container max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden transform transition-all hover:shadow-xl">
+        <div class="p-8">
+            <div class="text-center">
+                <h1 class="text-3xl font-bold text-gray-800 mb-6">Change Greeting Word</h1>
+                <div class="space-y-4">
+                    <div class="flex flex-col gap-2">
+                        <input type="text" id="wordInput" placeholder="Enter new greeting word"
+                            class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" />
+                        <button onclick="updateGreeting()"
+                            class="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-green-600 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50">
+                            Update Greeting
+                        </button>
+                    </div>
+                    <button onclick="window.location.href='/'"
+                        class="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50">
+                        Back to Home
+                    </button>
+                </div>
+                <div id="result" class="mt-6 p-4 min-h-16 text-lg font-medium text-gray-700 bg-gray-50 rounded-lg">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function updateGreeting() {
+            const word = document.getElementById( 'wordInput' ).value;
+            const resultDiv = document.getElementById( 'result' );
+
+            if ( !word ) {
+                resultDiv.textContent = 'Please enter a greeting word';
+                resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
+                return;
+            }
+
+            try {
+                resultDiv.textContent = 'Updating...';
+                resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-gray-700 bg-gray-50 rounded-lg';
+
+                const response = await fetch( '/greeting-word', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify( {
+                        word: word
+                    } )
+                } );
+                const data = await response.json();
+
+                if ( response.ok ) {
+                    resultDiv.textContent = data.message;
+                    resultDiv.className =
+                        'mt-6 p-4 min-h-16 text-lg font-medium text-green-600 bg-green-50 rounded-lg';
+
+                    // Add a countdown for better UX
+                    let countdown = 3;
+                    const interval = setInterval( () => {
+                        countdown--;
+                        resultDiv.textContent = `${data.message} - Redirecting in ${countdown}s`;
+                        if ( countdown <= 0 ) {
+                            clearInterval( interval );
+                            window.location.href = '/';
+                        }
+                    }, 1000 );
+                } else {
+                    resultDiv.textContent = data.error || 'Error updating greeting word';
+                    resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
+                }
+            } catch ( error ) {
+                resultDiv.textContent = 'Error updating greeting word';
+                resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
+            }
+        }
+
+        // Allow Enter key to trigger the update
+        document.getElementById( 'wordInput' ).addEventListener( 'keypress', function ( e ) {
+            if ( e.key === 'Enter' ) {
+                updateGreeting();
+            }
+        } );
+    </script>
+</body>
+
+</html>

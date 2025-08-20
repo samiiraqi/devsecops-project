@@ -1,0 +1,144 @@
+name: Fast Deploy (Smart/Idempotent, OIDC)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: devsecops
+  NAMESPACE: devsecops
+  ECR_REPO: devsecops
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  ROLE_ARN: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/devsecops-github-actions-role
+
+concurrency:
+  group: fast-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  detect_infra:
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.out.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: out
+        run: |
+          set -e
+          CS=$(aws eks describe-cluster --name "${CLUSTER_NAME}" --query 'cluster.status' --output text 2>/dev/null || echo NOTFOUND)
+          VPC=$(aws eks describe-cluster --name "${CLUSTER_NAME}" --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null || echo "")
+          NG=$(aws eks list-nodegroups --cluster-name "${CLUSTER_NAME}" --query 'nodegroups[0]' --output text 2>/dev/null || echo NOTFOUND)
+          if [ "$CS" = "ACTIVE" ] && [ -n "$VPC" ] && [ "$NG" != "NOTFOUND" ]; then
+            echo "status=INFRA_OK" >> $GITHUB_OUTPUT
+          else
+            echo "status=INFRA_NEEDED" >> $GITHUB_OUTPUT
+          fi
+          echo "Detected: cluster=$CS vpc=$VPC nodegroup=$NG"
+
+  apply_infra_if_needed:
+    needs: detect_infra
+    if: ${{ needs.detect_infra.outputs.status == 'INFRA_NEEDED' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform apply (refresh + plan)
+        working-directory: infra
+        run: |
+          set -e
+          terraform init
+          terraform apply -refresh-only -auto-approve || true
+          terraform plan -out=tfplan
+          terraform apply -auto-approve tfplan || true
+
+  test_build_push:
+    needs: [ detect_infra, apply_infra_if_needed ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python tests early
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+          python -m pytest tests/ --cov=app
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set ECR registry & login (ensure repo exists)
+        run: |
+          echo "ECR_REGISTRY=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com" >> $GITHUB_ENV
+          aws ecr describe-repositories --repository-names "${ECR_REPO}" >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name "${ECR_REPO}" >/dev/null
+          aws ecr get-login-password --region "${AWS_REGION}" | \
+            docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+
+      - name: Build, tag, push
+        run: |
+          IMAGE_SHA="${ECR_REGISTRY}/${ECR_REPO}:${GITHUB_SHA}"
+          IMAGE_LATEST="${ECR_REGISTRY}/${ECR_REPO}:latest"
+          echo "IMAGE_SHA=${IMAGE_SHA}" >> $GITHUB_ENV
+          echo "IMAGE_LATEST=${IMAGE_LATEST}" >> $GITHUB_ENV
+          docker build -t "${IMAGE_SHA}" .
+          docker tag "${IMAGE_SHA}" "${IMAGE_LATEST}"
+          docker push "${IMAGE_SHA}"
+          docker push "${IMAGE_LATEST}"
+
+  deploy_and_healthcheck:
+    needs: test_build_push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        run: |
+          VER="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
+          curl -LO "https://dl.k8s.io/release/${VER}/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region "${AWS_REGION}" --name "${CLUSTER_NAME}"
+
+      - name: Apply k8s/test.yaml (Namespace + Deployment + Service)
+        run: kubectl apply -f k8s/test.yaml
+
+      - name: Force rollout to the built image (immutable)
+        run: |
+          kubectl -n "${NAMESPACE}" set image deploy/python-app python-app="${IMAGE_SHA}" --record
+          kubectl -n "${NAMESPACE}" rollout status deploy/python-app --timeout=300s
+
+      - name: Quick health check (/health)
+        env:
+          SVC: python-app-service
+        run: |
+          URL=$(kubectl get svc "$SVC" -n "${NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          if [ -n "$URL" ]; then
+            echo "Service URL: $URL"
+            curl -sf "http://${URL}/health" >/dev/null && echo "OK" && exit 0
+          fi
+          echo "Service not responding"; exit 1

@@ -3,7 +3,6 @@ resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
 
-  # GitHub trust anchors
   thumbprint_list = [
     "6938fd4d98bab03faadb97b34396831e3780aea1",
     "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
@@ -29,13 +28,21 @@ resource "aws_iam_role" "gha_role" {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         },
-        # IMPORTANT: subject must include "ref:"
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.repo_full_name}:ref:${var.branch_ref}"
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.repo_full_name}:ref:refs/heads/*",
+            "repo:${var.repo_full_name}:ref:refs/tags/v*"
+          ]
         }
       }
     }]
   })
+}
+
+# Broad permissions for first setup; tighten later if you want least privilege.
+resource "aws_iam_role_policy_attachment" "gha_admin" {
+  role       = aws_iam_role.gha_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
 resource "aws_iam_role_policy_attachment" "gha_ecr_poweruser" {

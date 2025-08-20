@@ -1,17 +1,18 @@
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 19.21"
+  version = ">= 20.0, < 21.0"
 
-  cluster_name                   = var.cluster_name
-  cluster_version                = var.kubernetes_version
-  vpc_id                         = var.vpc_id
-  subnet_ids                     = var.private_subnet_ids
-  cluster_endpoint_public_access = true
-  enable_irsa                    = true
+  # Cluster
+  cluster_name    = var.cluster_name
+  cluster_version = var.kubernetes_version
 
+  # Networking
+  vpc_id     = var.vpc_id
+  subnet_ids = var.private_subnet_ids
+
+  # Managed node group (simple default)
   eks_managed_node_groups = {
-    main = {
-      name           = "${var.cluster_name}-ng"
+    default = {
       instance_types = var.instance_types
       desired_size   = var.desired_size
       min_size       = var.min_size
@@ -19,20 +20,6 @@ module "eks" {
     }
   }
 
-  manage_aws_auth_configmap = true
-
-  aws_auth_users = var.aws_auth_users
-  aws_auth_roles = var.aws_auth_roles
-
-  cluster_addons = {
-    coredns = {
-      most_recent = true
-    }
-    kube-proxy = {
-      most_recent = true
-    }
-    vpc-cni = {
-      most_recent = true
-    }
-  }
+  # NOTE: In v20+, aws-auth is NOT managed here.
+  # We apply aws-auth via k8s/aws-auth.yaml in GitHub Actions after the cluster exists.
 }

@@ -10,17 +10,12 @@ variable "cluster_name" {
 
 variable "kubernetes_version" {
   type    = string
-  default = "1.28"
+  default = "1.29"
 }
 
-variable "s3_bucket_name" {
-  type    = string
-  default = "devsecops-bucket"
-}
-
-variable "dynamodb_table_name" {
-  type    = string
-  default = "app-table"
+variable "instance_types" {
+  type    = list(string)
+  default = ["t3.small"]
 }
 
 variable "desired_size" {
@@ -30,7 +25,7 @@ variable "desired_size" {
 
 variable "min_size" {
   type    = number
-  default = 1
+  default = 2
 }
 
 variable "max_size" {
@@ -38,9 +33,12 @@ variable "max_size" {
   default = 3
 }
 
-variable "instance_types" {
-  type = list(string)
-  default = [
-    "t3.medium"
-  ]
+variable "s3_bucket_name" {
+  type    = string
+  default = "devsecops-tf-state"
+}
+
+variable "dynamodb_table_name" {
+  type    = string
+  default = "devsecops-tf-locks"
 }
