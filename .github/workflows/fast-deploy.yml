@@ -1,8 +1,12 @@
-name: full-deploy
+name: fast-deploy
 
 on:
   push:
     branches: ["main"]
+    # Run when NON-infra files change
+    paths-ignore:
+      - 'infra/**'
+  workflow_dispatch: {}
 
 env:
   AWS_REGION: us-east-1
@@ -15,39 +19,18 @@ permissions:
   id-token: write
   contents: read
 
+# Same group as full-deploy so they never run together
 concurrency:
-  group: full-deploy-${{ github.ref }}
+  group: devsecops-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  infra-build-deploy:
+  app-build-deploy-only:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Terraform (plan + apply)
-      - name: Configure AWS (assume Terraform role)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::156041402173:role/devsecops-terraform-role
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        run: terraform -chdir=infra init -upgrade
-
-      - name: Terraform Validate
-        run: terraform -chdir=infra validate
-
-      - name: Terraform Plan
-        run: terraform -chdir=infra plan -out=tfplan
-
-      - name: Terraform Apply
-        run: terraform -chdir=infra apply -auto-approve tfplan
-
-      # App: tests + scan + build + push
+      # App: tests + scan + build + push (NO Terraform here)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -71,6 +54,12 @@ jobs:
           . venv/bin/activate
           bandit -r app -ll
 
+      - name: Configure AWS (for ECR/EKS)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::156041402173:role/devsecops-terraform-role
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
@@ -81,7 +70,7 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
 
-      # Deploy to EKS (install kubectl via curl; no Azure)
+      # Deploy to EKS
       - name: Install kubectl
         run: |
           curl -sL https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl -o kubectl
@@ -92,9 +81,8 @@ jobs:
         run: |
           aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
 
-      - name: Apply manifests & set image to SHA
+      - name: Set image to new SHA (no infra apply)
         run: |
-          kubectl apply -f k8s/deployment.yaml
           kubectl -n "$K8S_NAMESPACE" set image deploy/python-app \
             python-app=$ECR_REGISTRY/$ECR_REPO:${{ github.sha }}
 

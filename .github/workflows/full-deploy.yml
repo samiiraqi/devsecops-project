@@ -3,6 +3,10 @@ name: full-deploy
 on:
   push:
     branches: ["main"]
+    # Run ONLY when infra changes
+    paths:
+      - 'infra/**'
+  workflow_dispatch: {}
 
 env:
   AWS_REGION: us-east-1
@@ -15,8 +19,9 @@ permissions:
   id-token: write
   contents: read
 
+# Prevent overlap with fast-deploy
 concurrency:
-  group: full-deploy-${{ github.ref }}
+  group: devsecops-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -81,7 +86,7 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
 
-      # Deploy to EKS (install kubectl via curl; no Azure)
+      # Deploy to EKS
       - name: Install kubectl
         run: |
           curl -sL https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl -o kubectl
