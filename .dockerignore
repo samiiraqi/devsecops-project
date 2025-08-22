@@ -1,78 +1,28 @@
-# Git
+# VCS
 .git
 .gitignore
-README.md
-.gitattributes
 
 # Python
-**/__pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
-myenv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
 venv/
 env/
-.env
-.venv
-pip-log.txt
-pip-delete-this-directory.txt
-.coverage
-.pytest_cache/
-.tox/
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
+myenv/
 
-# Terraform (entire infra folder)
+# Tests & docs
+tests/
+*.md
+
+# Infra & k8s (don’t bake into the app image)
 infra/
-.terraform/
-terraform.tfstate*
-*.tfvars
-*.tfvars.json
-*.tfplan
-
-# Kubernetes
 k8s/
-*.yaml
-*.yml
-kubeconfig
-aws-auth-configmap.yaml
 
-# IDE
+# Terraform build dirs
+.terraform/
+.terraform.lock.hcl
+
+# Editors/OS
 .vscode/
 .idea/
-*.swp
-*.swo
 .DS_Store
-
-# Documentation
-*.md
-docs/
-
-# Testing
-tests/
-test_*.py
-*_test.py
-
-# Docker
-Dockerfile*
-docker-compose*.yml
-.dockerignore
-
-# Build artifacts
-build/
-dist/
-*.egg-info/
-.eggs/
-
-# Misc
-.tmp/
-tmp/
-temp/
-*.tmp
-*.bak
-*~
-tests/

@@ -2,20 +2,16 @@ variable "name" {
   type = string
 }
 
-variable "vpc_cidr" {
+variable "cidr" {
   type = string
 }
 
-variable "azs" {
-  type = list(string)
+variable "az_count" {
+  type    = number
+  default = 2
 }
 
-variable "public_bits" {
-  type    = number
-  default = 8
-}
-
-variable "private_bits" {
-  type    = number
-  default = 8
+variable "tags" {
+  type    = map(string)
+  default = {}
 }

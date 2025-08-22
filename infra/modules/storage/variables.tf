@@ -1,11 +1,18 @@
-variable "bucket_name_prefix" {
+variable "bucket_name" {
   type = string
 }
 
-variable "random_suffix" {
-  type = string
+variable "create_kms" {
+  type    = bool
+  default = true
 }
 
-variable "dynamodb_table_name" {
-  type = string
+variable "force_destroy" {
+  type    = bool
+  default = false
+}
+
+variable "tags" {
+  type    = map(string)
+  default = {}
 }

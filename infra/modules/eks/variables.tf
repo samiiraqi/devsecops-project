@@ -1,4 +1,4 @@
-variable "cluster_name" {
+variable "name" {
   type = string
 }
 
@@ -14,18 +14,34 @@ variable "private_subnet_ids" {
   type = list(string)
 }
 
-variable "instance_types" {
+variable "public_subnet_ids" {
   type = list(string)
 }
 
-variable "desired_size" {
-  type = number
+variable "cluster_endpoint_public_access_cidrs" {
+  type = list(string)
 }
 
-variable "min_size" {
-  type = number
+variable "map_roles" {
+  type = list(object({
+    rolearn  = string
+    username = string
+    groups   = list(string)
+  }))
+  default = []
 }
 
-variable "max_size" {
-  type = number
+variable "node_role_name" {
+  type = string
+}
+
+variable "tags" {
+  type    = map(string)
+  default = {}
+}
+
+variable "access_entries" {
+  description = "EKS access entries to grant IAM principals cluster access"
+  type        = any
+  default     = {}
 }

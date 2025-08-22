@@ -1,66 +1,100 @@
 provider "aws" {
   region = var.aws_region
+  default_tags { tags = var.tags }
 }
 
-data "aws_availability_zones" "available" {
-  state = "available"
-}
-
-resource "random_string" "suffix" {
-  length  = 6
-  special = false
-  upper   = false
-}
+data "aws_caller_identity" "current" {}
 
 locals {
-  name = var.cluster_name
-  azs  = slice(data.aws_availability_zones.available.names, 0, 2)
+  name     = var.name_prefix
+  subjects = [for b in var.github_branches : "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${b}"]
 }
 
-# ---------- VPC ----------
+# --- VPC ---
 module "vpc" {
-  source       = "./modules/vpc"
-  name         = local.name
-  vpc_cidr     = "10.0.0.0/16"
-  azs          = local.azs
-  public_bits  = 8
-  private_bits = 8
+  source   = "./modules/vpc"
+  name     = local.name
+  cidr     = var.vpc_cidr
+  az_count = var.az_count
+  tags     = var.tags
 }
 
-# ---------- GitHub OIDC ----------
-module "github_oidc" {
-  source = "./modules/github_oidc"
-
-  cluster_name          = var.cluster_name
-  repo_full_name        = "samiiraqi/flask-app-k8s" # <-- EXACT org/repo
-  use_existing_provider = false
-  existing_provider_arn = null
-}
-
-# ---------- EKS ----------
-module "eks" {
-  source             = "./modules/eks"
-  cluster_name       = var.cluster_name
-  kubernetes_version = var.kubernetes_version
-  vpc_id             = module.vpc.vpc_id
-  private_subnet_ids = module.vpc.private_subnets
-
-  instance_types = var.instance_types
-  desired_size   = var.desired_size
-  min_size       = var.min_size
-  max_size       = var.max_size
-}
-
-# ---------- ECR ----------
+# --- ECR ---
 module "ecr" {
   source          = "./modules/ecr"
-  repository_name = var.cluster_name
+  repository_name = local.name
+  create_kms_key  = true
+  tags            = var.tags
 }
 
-# ---------- Storage (optional) ----------
+# --- GitHub OIDC role (fixed name to match your aws-auth) ---
+module "github_oidc" {
+  source       = "./modules/github_oidc"
+  role_name    = "devsecops-github-actions-role"
+  subjects     = local.subjects
+  ecr_repo_arn = module.ecr.repository_arn
+  tags         = var.tags
+
+  allow_ecr_actions = [
+    "ecr:GetAuthorizationToken","ecr:BatchCheckLayerAvailability","ecr:GetDownloadUrlForLayer",
+    "ecr:BatchGetImage","ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart",
+    "ecr:CompleteLayerUpload","ecr:DescribeRepositories","ecr:ListImages","ecr:BatchDeleteImage"
+  ]
+  allow_eks_actions = ["eks:DescribeCluster"]
+}
+
+# --- EKS ---
+module "eks" {
+  source                               = "./modules/eks"
+  name                                 = local.name
+  kubernetes_version                   = var.kubernetes_version
+  vpc_id                               = module.vpc.vpc_id
+  private_subnet_ids                   = module.vpc.private_subnet_ids
+  public_subnet_ids                    = module.vpc.public_subnet_ids
+  cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
+
+  # Optional: map GitHub role directly (you ALSO have k8s/aws-auth.yaml for manual control)
+  access_entries = {
+    github_admin = {
+      principal_arn = module.github_oidc.role_arn
+      policy_associations = {
+        admin = {
+          policy_arn  = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
+        }
+      }
+    }
+    terraform_admin = {
+      principal_arn = "arn:aws:iam::156041402173:role/devsecops-terraform-role"
+      policy_associations = {
+        admin = {
+          policy_arn  = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
+        }
+      }
+    }
+  }
+
+
+  map_roles = [
+    {
+      rolearn  = module.github_oidc.role_arn
+      username = "github-actions"
+      groups   = ["system:masters"]
+    }
+  ]
+
+  # Force node role name to match your aws-auth
+  node_role_name = "devsecops-eks-cluster-node-role"
+
+  tags = var.tags
+}
+
+# --- S3 storage ---
 module "storage" {
-  source              = "./modules/storage"
-  bucket_name_prefix  = var.s3_bucket_name
-  random_suffix       = random_string.suffix.result
-  dynamodb_table_name = var.dynamodb_table_name
+  source        = "./modules/storage"
+  bucket_name   = var.app_bucket_name
+  create_kms    = true
+  force_destroy = false
+  tags          = var.tags
 }

@@ -5,14 +5,11 @@ metadata:
   namespace: kube-system
 data:
   mapRoles: |
-    # 1) EKS worker node role (lets nodes join the cluster)
     - rolearn: arn:aws:iam::156041402173:role/devsecops-eks-cluster-node-role
       username: system:node:{{EC2PrivateDNSName}}
       groups:
         - system:bootstrappers
         - system:nodes
-
-    # 2) GitHub Actions OIDC role (lets your workflows run kubectl)
     - rolearn: arn:aws:iam::156041402173:role/devsecops-github-actions-role
       username: github-actions
       groups:

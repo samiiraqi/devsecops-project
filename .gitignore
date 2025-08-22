@@ -1,40 +1,29 @@
 # Python
-myenv/
-**__pycache__**/
-*.pyc
+__pycache__/
+*.py[cod]
 *.pyo
-*.pyd
-.pytest_cache/
-.coverage
-.env
 *.log
+.pytest_cache/
+venv/
+env/
+myenv/
 
-# System files
-.DS_Store
-
-# Terraform - keep .tf files, ignore sensitive data
-.terraform/
-terraform.tfstate*
-*.tfvars
-*.tfvars.json
-*.tfplan
-crash.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
-.terraformrc
-terraform.rc
-
-# Kubernetes generated files
-aws-auth-configmap.yaml
-kubeconfig
-
-# IDEs
+# Editors/OS
 .vscode/
 .idea/
-*.swp
-*.swo
+.DS_Store
+Thumbs.db
 
-# Logs
-*.log
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/crash.log
+infra/override.tf
+infra/override.tf.json
+infra/terraform.tfvars
+infra/terraform.tfvars.json
+infra/.terraform.lock.hcl
+
+# Docker
+*.tar

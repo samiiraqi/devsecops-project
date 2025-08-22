@@ -1,3 +1,1 @@
-output "role_arn" {
-  value = aws_iam_role.gha_role.arn
-}
+output "role_arn" { value = aws_iam_role.github_actions.arn }

@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, render_template
 from .utils import clean_string
-
+from .main import app
 app = Flask(__name__)
 
 greeting_word = "hello"

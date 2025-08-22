@@ -1,18 +1,24 @@
-variable "use_existing_provider" {
-  type    = bool
-  default = false
-}
-
-variable "existing_provider_arn" {
-  type    = string
-  default = null
-}
-
-variable "cluster_name" {
+variable "role_name" {
   type = string
 }
 
-variable "repo_full_name" {
-  type        = string
-  description = "GitHub repo in org/repo format, e.g., samiiraqi/flask-app-k8s"
+variable "subjects" {
+  type = list(string)
+}
+
+variable "ecr_repo_arn" {
+  type = string
+}
+
+variable "allow_ecr_actions" {
+  type = list(string)
+}
+
+variable "allow_eks_actions" {
+  type = list(string)
+}
+
+variable "tags" {
+  type    = map(string)
+  default = {}
 }
