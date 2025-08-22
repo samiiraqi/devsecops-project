@@ -19,9 +19,9 @@ permissions:
   id-token: write
   contents: read
 
-# Prevent overlap with fast-deploy
+# Per-workflow concurrency → won't cancel fast-deploy
 concurrency:
-  group: devsecops-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

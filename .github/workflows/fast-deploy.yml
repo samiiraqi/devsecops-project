@@ -19,9 +19,9 @@ permissions:
   id-token: write
   contents: read
 
-# Same group as full-deploy so they never run together
+# Per-workflow concurrency → won't cancel full-deploy
 concurrency:
-  group: devsecops-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
