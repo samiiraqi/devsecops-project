@@ -155,21 +155,23 @@ jobs:
             echo "No existing VPC found; Terraform will create one."
           fi
 
-      # Clear leftovers that cause conflicts
-      - name: Remove conflicting leftovers (KMS alias & CW log group)
+      # ✅ Clear stale Terraform lock (if any)
+      - name: Clear stale Terraform lock (DynamoDB)
         run: |
-          aws kms delete-alias --alias-name "alias/eks/${CLUSTER_NAME}" >/dev/null 2>&1 || true
-          aws logs delete-log-group --log-group-name "/aws/eks/${CLUSTER_NAME}/cluster" >/dev/null 2>&1 || true
+          LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
+          aws dynamodb delete-item \
+            --table-name "$TF_LOCK_TABLE" \
+            --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}" >/dev/null 2>&1 || true
 
       # Terraform plan/apply
       - name: Terraform Validate
         run: terraform -chdir=infra validate
 
       - name: Terraform Plan
-        run: terraform -chdir=infra plan -input=false -out=tfplan
+        run: terraform -chdir=infra plan -lock-timeout=10m -input=false -out=tfplan
 
       - name: Terraform Apply
-        run: terraform -chdir=infra apply -auto-approve tfplan
+        run: terraform -chdir=infra apply -lock-timeout=10m -auto-approve tfplan
 
       # Build & push image
       - name: Login to ECR
