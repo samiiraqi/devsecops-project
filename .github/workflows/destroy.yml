@@ -17,6 +17,7 @@ env:
   TF_BACKEND_KEY: tfstate/infra.tfstate
   TF_LOCK_TABLE: terraform-locks
   TERRAFORM_ROLE_ARN: arn:aws:iam::156041402173:role/devsecops-terraform-role
+  ECR_REPO: devsecops
 
 permissions:
   id-token: write
@@ -54,7 +55,33 @@ jobs:
           # Wait a bit for ELB to be released
           sleep 60
 
-      # 2) Terraform destroy with S3/Dynamo backend
+      # 2) Pre-clean ECR images so repo can be deleted
+      - name: "Purge all ECR images (best-effort)"
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -e
+          sudo apt-get update >/dev/null 2>&1 || true
+          sudo apt-get install -y jq >/dev/null 2>&1 || true
+          REPO="$ECR_REPO"
+          echo "Purging images in ECR repo: $REPO"
+          NEXT=""
+          while :; do
+            if [ -n "$NEXT" ]; then
+              PAGE=$(aws ecr list-images --repository-name "$REPO" --max-results 1000 --next-token "$NEXT" 2>/dev/null || true)
+            else
+              PAGE=$(aws ecr list-images --repository-name "$REPO" --max-results 1000 2>/dev/null || true)
+            fi
+            IDS=$(echo "$PAGE" | jq -c '.imageIds // []')
+            COUNT=$(echo "$IDS" | jq 'length')
+            [ "$COUNT" -eq 0 ] && break
+            aws ecr batch-delete-image --repository-name "$REPO" --image-ids "$IDS" || true
+            NEXT=$(echo "$PAGE" | jq -r '.nextToken // empty')
+            [ -z "$NEXT" ] && break
+          done
+          echo "ECR purge done (or repo absent)."
+
+      # 3) Terraform destroy with S3/Dynamo backend (keep backend bucket!)
       - name: "Setup Terraform"
         uses: hashicorp/setup-terraform@v3
         with:
@@ -80,6 +107,18 @@ jobs:
             -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
             -backend-config="encrypt=true"
 
+      # IMPORTANT: Do not attempt to delete the backend bucket. Remove storage module from state.
+      - name: "Keep backend bucket: drop storage module from state"
+        shell: bash
+        continue-on-error: true
+        run: |
+          # Remove everything under module.storage so destroy won't try to delete the backend bucket
+          terraform -chdir=infra state list | awk '/^module\.storage\./{print}' | \
+            while read -r addr; do
+              echo "Removing from state: $addr"
+              terraform -chdir=infra state rm "$addr" || true
+            done
+
       - name: "Terraform Plan (destroy)"
         shell: bash
         run: terraform -chdir=infra plan -destroy -lock-timeout=10m -out=tfplan
@@ -88,7 +127,7 @@ jobs:
         shell: bash
         run: terraform -chdir=infra apply -lock-timeout=10m -auto-approve tfplan
 
-      # 3) Cleanup lock + (optional) backend
+      # Best-effort: clear the TF state lock row
       - name: "Delete DynamoDB lock row (best-effort)"
         shell: bash
         continue-on-error: true
@@ -96,11 +135,30 @@ jobs:
           LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
           aws dynamodb delete-item --table-name "$TF_LOCK_TABLE" --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}" >/dev/null 2>&1 || true
 
+      # Optional: fully remove backend (dangerous, erases state) AFTER destroy succeeds
       - name: "Delete backend bucket & lock table (DANGEROUS)"
         if: ${{ github.event.inputs.delete_backend == 'yes' }}
         shell: bash
         continue-on-error: true
         run: |
+          # Empty the versioned bucket (excluding the tfstate prefix for safety)
+          sudo apt-get update >/dev/null 2>&1 || true
+          sudo apt-get install -y jq >/dev/null 2>&1 || true
+          BUCKET="${TF_BACKEND_BUCKET}"
+          PREFIX_EXCLUDE="^${TF_BACKEND_KEY}"
+          echo "Emptying versioned bucket $BUCKET (this will remove ALL versions)..."
+          aws s3api list-object-versions --bucket "$BUCKET" --output json \
+            | jq -c '.Versions[]?, .DeleteMarkers[]? | {Key:.Key, VersionId:.VersionId}' \
+            | while read -r item; do
+                KEY=$(echo "$item" | jq -r .Key)
+                VID=$(echo "$item" | jq -r .VersionId)
+                if echo "$KEY" | grep -Eq "$PREFIX_EXCLUDE"; then
+                  # keep state objects by default; comment these 3 lines to nuke everything
+                  continue
+                fi
+                aws s3api delete-object --bucket "$BUCKET" --key "$KEY" --version-id "$VID" || true
+              done
+          # Now remove bucket & lock table
           aws s3 rb "s3://${TF_BACKEND_BUCKET}" --force || true
           aws dynamodb delete-table --table-name "$TF_LOCK_TABLE" || true
 
@@ -108,7 +166,7 @@ jobs:
         shell: bash
         run: |
           echo "Check in AWS Console for stragglers:"
-          echo "- NAT Gateways (expensive) -> VPC console"
-          echo "- Load Balancers -> EC2 console"
+          echo "- NAT Gateways (expensive) -> VPC console (should be gone with VPC)"
+          echo "- Load Balancers -> EC2 console (Service delete handles this)"
           echo "- EBS Volumes / Elastic IPs -> EC2 console"
-          echo "- ECR images are storage-only; safe to keep"
+          echo "- ECR repo: now empty or deleted; storage cost minimal"
