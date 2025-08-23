@@ -19,6 +19,7 @@ env:
   TF_LOCK_TABLE: terraform-locks
   TF_INPUT: "false"
   PYTHONPATH: .
+  TERRAFORM_ROLE_ARN: arn:aws:iam::156041402173:role/devsecops-terraform-role
 
 permissions:
   id-token: write
@@ -61,7 +62,7 @@ jobs:
       - name: Configure AWS (assume Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::156041402173:role/devsecops-terraform-role
+          role-to-assume: ${{ env.TERRAFORM_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       # --------- Terraform -------------
@@ -131,39 +132,38 @@ jobs:
           cd infra
           imp () { terraform import "$1" "$2" >/dev/null 2>&1 || true; }
 
-          # If bucket already exists (we just created it), let TF own it
+          # Backend bucket
           if aws s3api head-bucket --bucket "${{ env.TF_BACKEND_BUCKET }}" >/dev/null 2>&1; then
             imp "module.storage.aws_s3_bucket.this" "${{ env.TF_BACKEND_BUCKET }}"
           fi
 
-          # If these exist, adopt; otherwise TF will create them
+          # ECR repo
           aws ecr describe-repositories --repository-names "${{ env.ECR_REPO }}" --region "${{ env.AWS_REGION }}" >/dev/null 2>&1 && \
             imp "module.ecr.aws_ecr_repository.this" "${{ env.ECR_REPO }}" || true
 
+          # IAM roles
           aws iam get-role --role-name "devsecops-github-actions-role" >/dev/null 2>&1 && \
             imp "module.github_oidc.aws_iam_role.github_actions" "devsecops-github-actions-role" || true
-
           aws iam get-role --role-name "devsecops-eks-cluster-role"  >/dev/null 2>&1 && \
             imp "module.eks.aws_iam_role.cluster" "devsecops-eks-cluster-role" || true
-
           aws iam get-role --role-name "devsecops-eks-cluster-node-role" >/dev/null 2>&1 && \
             imp "module.eks.aws_iam_role.node" "devsecops-eks-cluster-node-role" || true
 
-          # EKS node group (import if it already exists)
+          # EKS node group
           if aws eks describe-nodegroup --cluster-name "${{ env.CLUSTER_NAME }}" \
                  --nodegroup-name "${{ env.CLUSTER_NAME }}-ng" \
                  --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
             imp "module.eks.aws_eks_node_group.default" "${{ env.CLUSTER_NAME }}:${{ env.CLUSTER_NAME }}-ng"
           fi
 
-          # ✅ Unconditional imports for EKS access entries + policy associations
+          # EKS access entries + policy associations (import regardless)
           AE_POLICY="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
           imp "module.eks.aws_eks_access_entry.this[\"github_admin\"]"    "${{ env.CLUSTER_NAME }}:arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-github-actions-role"
           imp "module.eks.aws_eks_access_entry.this[\"terraform_admin\"]" "${{ env.CLUSTER_NAME }}:arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-terraform-role"
           imp "module.eks.aws_eks_access_policy_association.this[\"github_admin\"]"    "${{ env.CLUSTER_NAME }}#arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-github-actions-role#${AE_POLICY}"
           imp "module.eks.aws_eks_access_policy_association.this[\"terraform_admin\"]" "${{ env.CLUSTER_NAME }}#arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-terraform-role#${AE_POLICY}"
 
-      # ✅ Guard against duplicate VPCs (uses jq)
+      # Avoid duplicate VPCs
       - name: Adopt existing VPC & subnets (handle duplicates safely)
         run: |
           set -e
@@ -208,7 +208,7 @@ jobs:
           LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
           aws dynamodb delete-item --table-name "$TF_LOCK_TABLE" --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}" >/dev/null 2>&1 || true
 
-      # Remove leftover conflicts (KMS alias & CW log group)
+      # Remove conflicting leftovers (KMS alias & CW log group)
       - name: Remove conflicting leftovers (KMS alias & CW log group)
         run: |
           aws kms delete-alias --alias-name "alias/eks/${CLUSTER_NAME}" >/dev/null 2>&1 || true
@@ -237,13 +237,7 @@ jobs:
 
       # --------- Deploy to EKS ---------
 
-      # Force Terraform role before ANY kubectl
-      - name: Switch to Terraform role for kubectl
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::156041402173:role/devsecops-terraform-role
-          aws-region: ${{ env.AWS_REGION }}
-
+      # (Optional) print identity we have right now
       - name: Who am I (AWS) before kubectl?
         run: aws sts get-caller-identity
 
@@ -268,30 +262,14 @@ jobs:
           echo "::error::EKS cluster '$CLUSTER_NAME' not found after waiting. Check Terraform logs."
           exit 1
 
-      - name: Wait for EKS access entry to be active for current role
+      # 🔒 Force kubectl to authenticate as the Terraform role (even if current env is GH role)
+      - name: Update kubeconfig (use Terraform role for auth tokens)
         run: |
-          set -e
-          ROLE_ARN=$(aws sts get-caller-identity --query Arn --output text)
-          echo "Caller STS ARN: $ROLE_ARN"
-          BASE_ROLE=$(echo "$ROLE_ARN" | sed -E 's#^arn:aws:sts::([0-9]+):assumed-role/([^/]+)/.*$#arn:aws:iam::\1:role/\2#')
-          echo "Expecting EKS access entry for: $BASE_ROLE"
-          for i in {1..40}; do
-            FOUND=$(aws eks list-access-entries --cluster-name "$CLUSTER_NAME" --region "$AWS_REGION" \
-              --query "accessEntries[?principalArn=='$BASE_ROLE'].principalArn" --output text || true)
-            if [ "$FOUND" = "$BASE_ROLE" ]; then
-              echo "Access entry present for $BASE_ROLE"
-              exit 0
-            fi
-            echo "Waiting for access entry to propagate... ($i/40)"
-            sleep 10
-          done
-          echo "::error::No EKS access entry found for $BASE_ROLE"
-          aws eks list-access-entries --cluster-name "$CLUSTER_NAME" --region "$AWS_REGION" || true
-          exit 1
-
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION" \
+            --role-arn "$TERRAFORM_ROLE_ARN" --alias "$CLUSTER_NAME"
+          kubectl config current-context
+          # show the exec args to confirm role-arn is embedded
+          yq -r '.users[0].user.exec.args' ~/.kube/config || cat ~/.kube/config
 
       - name: Sanity check RBAC (can we manage deployments?)
         run: |
