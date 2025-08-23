@@ -1,0 +1,104 @@
+name: destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      delete_backend:
+        description: "Also delete TF backend (S3 bucket + DynamoDB table)? DANGEROUS"
+        required: false
+        default: "no"
+
+env:
+  AWS_REGION: us-east-1
+  ACCOUNT_ID: "156041402173"
+  CLUSTER_NAME: devsecops
+  K8S_NAMESPACE: devsecops
+  TF_BACKEND_BUCKET: devsecops-156041402173-us-east-1
+  TF_BACKEND_KEY: tfstate/infra.tfstate
+  TF_LOCK_TABLE: terraform-locks
+  TERRAFORM_ROLE_ARN: arn:aws:iam::156041402173:role/devsecops-terraform-role
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  nuke-infra-safely:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Configure AWS"
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Delete K8s first to drop the LoadBalancer (stop costs)
+      - name: "Install kubectl"
+        run: |
+          curl -sL "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o kubectl
+          install -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client=true
+
+      - name: "Delete Kubernetes manifests (ok if cluster/files missing)"
+        continue-on-error: true
+        run: |
+          rm -f ~/.kube/config
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION" || exit 0
+          if [ -d k8s ]; then
+            kubectl delete -f k8s/ --ignore-not-found=true || true
+          fi
+          # Wait a bit for the ELB to be released
+          sleep 60
+
+      # Terraform destroy using existing S3/Dynamo backend
+      - name: "Setup Terraform"
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: "Write backend stub (S3)"
+        run: |
+          mkdir -p infra
+          cat > infra/backend.tf <<'HCL'
+          terraform { backend "s3" {} }
+          HCL
+
+      - name: "Terraform Init"
+        run: |
+          terraform -chdir=infra init -upgrade \
+            -backend-config="bucket=${TF_BACKEND_BUCKET}" \
+            -backend-config="key=${TF_BACKEND_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+
+      - name: "Terraform Plan (destroy)"
+        run: terraform -chdir=infra plan -destroy -lock-timeout=10m -out=tfplan
+
+      - name: "Terraform Apply (destroy)"
+        run: terraform -chdir=infra apply -lock-timeout=10m -auto-approve tfplan
+
+      # Best-effort: clear the state lock row
+      - name: "Delete DynamoDB lock row (best-effort)"
+        continue-on-error: true
+        run: |
+          LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
+          aws dynamodb delete-item --table-name "$TF_LOCK_TABLE" --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}" >/dev/null 2>&1 || true
+
+      # Optional: fully remove backend (dangerous, erases state)
+      - name: "Delete backend bucket & lock table (DANGEROUS)"
+        if: ${{ github.event.inputs.delete_backend == 'yes' }}
+        continue-on-error: true
+        run: |
+          aws s3 rb "s3://${TF_BACKEND_BUCKET}" --force || true
+          aws dynamodb delete-table --table-name "$TF_LOCK_TABLE" || true
+
+      - name: "Cost hotspots checklist"
+        run: |
+          echo "Check in AWS Console for stragglers:"
+          echo "- NAT Gateways (expensive) -> VPC console"
+          echo "- Load Balancers -> EC2 console"
+          echo "- EBS Volumes / Elastic IPs -> EC2 console"
+          echo "- ECR images are storage-only; safe to keep"
