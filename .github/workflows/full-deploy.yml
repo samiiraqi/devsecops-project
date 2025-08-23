@@ -88,6 +88,18 @@ jobs:
           }
           HCL
 
+      # ✅ NEW: provide required variables automatically (org/repo/branches)
+      - name: Write GitHub tfvars (auto)
+        run: |
+          ORG="${GITHUB_REPOSITORY_OWNER}"
+          REPO="$(basename "$GITHUB_REPOSITORY")"
+          cat > infra/terraform.auto.tfvars <<EOF
+          github_org      = "${ORG}"
+          github_repo     = "${REPO}"
+          github_branches = ["main"]
+          EOF
+          echo "Wrote infra/terraform.auto.tfvars with org=${ORG}, repo=${REPO}"
+
       - name: Terraform Init (S3 backend)
         run: |
           terraform -chdir=infra init -upgrade \
@@ -108,17 +120,14 @@ jobs:
           if aws ecr describe-repositories --repository-names "${{ env.ECR_REPO }}" --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
             imp "module.ecr.aws_ecr_repository.this" "${{ env.ECR_REPO }}"
           fi
-
           # GitHub Actions IAM role
           if aws iam get-role --role-name "devsecops-github-actions-role" >/dev/null 2>&1; then
             imp "module.github_oidc.aws_iam_role.github_actions" "devsecops-github-actions-role"
           fi
-
           # EKS cluster IAM role (if already exists)
           if aws iam get-role --role-name "devsecops-eks-cluster-role" >/dev/null 2>&1; then
             imp "module.eks.aws_iam_role.cluster" "devsecops-eks-cluster-role"
           fi
-
           # Nodegroup IAM role
           if aws iam get-role --role-name "devsecops-eks-cluster-node-role" >/dev/null 2>&1; then
             imp "module.eks.aws_iam_role.node" "devsecops-eks-cluster-node-role"
@@ -128,7 +137,6 @@ jobs:
         run: |
           set -e
           cd infra
-
           VPC_NAME="devsecops-vpc"
           CIDR="10.0.0.0/16"
           VPC_ID=$(aws ec2 describe-vpcs \
@@ -140,14 +148,11 @@ jobs:
           if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
             echo "Found VPC $VPC_ID ($VPC_NAME). Adopting into state."
             imp "module.vpc.aws_vpc.this" "$VPC_ID"
-
             for AZ in us-east-1a us-east-1b; do
               PUB_NAME="devsecops-public-$AZ"
               PRV_NAME="devsecops-private-$AZ"
-
               PUB_ID=$(aws ec2 describe-subnets --filters Name=vpc-id,Values="$VPC_ID" Name=tag:Name,Values="$PUB_NAME" --query 'Subnets[0].SubnetId' --output text || true)
               PRV_ID=$(aws ec2 describe-subnets --filters Name=vpc-id,Values="$VPC_ID" Name=tag:Name,Values="$PRV_NAME" --query 'Subnets[0].SubnetId' --output text || true)
-
               [ -n "$PUB_ID" ] && [ "$PUB_ID" != "None" ] && imp "module.vpc.aws_subnet.public[$AZ]" "$PUB_ID"
               [ -n "$PRV_ID" ] && [ "$PRV_ID" != "None" ] && imp "module.vpc.aws_subnet.private[$AZ]" "$PRV_ID"
             done
@@ -155,7 +160,7 @@ jobs:
             echo "No existing VPC found; Terraform will create one."
           fi
 
-      # ✅ Clear stale Terraform lock (if any)
+      # Clear stale TF lock (if any)
       - name: Clear stale Terraform lock (DynamoDB)
         run: |
           LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
