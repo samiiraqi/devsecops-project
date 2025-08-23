@@ -149,29 +149,21 @@ jobs:
           aws iam get-role --role-name "devsecops-eks-cluster-node-role" >/dev/null 2>&1 && \
             imp "module.eks.aws_iam_role.node" "devsecops-eks-cluster-node-role" || true
 
-          # ✅ EKS node group (import if it already exists to avoid 409 ResourceInUse)
+          # EKS node group (import if it already exists)
           if aws eks describe-nodegroup --cluster-name "${{ env.CLUSTER_NAME }}" \
                  --nodegroup-name "${{ env.CLUSTER_NAME }}-ng" \
                  --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
             imp "module.eks.aws_eks_node_group.default" "${{ env.CLUSTER_NAME }}:${{ env.CLUSTER_NAME }}-ng"
           fi
 
-          # ✅ EKS access entries + policy associations (import if already exist)
+          # ✅ Unconditional imports for EKS access entries + policy associations
           AE_POLICY="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          import_ae () {
-            local key="$1"
-            local arn="$2"
-            if aws eks list-access-entries --cluster-name "${CLUSTER_NAME}" \
-                 --query "accessEntries[?principalArn=='${arn}'].principalArn" \
-                 --output text --region "${AWS_REGION}" | grep -q "${arn}"; then
-              imp "module.eks.aws_eks_access_entry.this[\"${key}\"]" "${CLUSTER_NAME}:${arn}"
-              imp "module.eks.aws_eks_access_policy_association.this[\"${key}\"]" "${CLUSTER_NAME}#${arn}#${AE_POLICY}"
-            fi
-          }
-          import_ae "github_admin"    "arn:aws:iam::${ACCOUNT_ID}:role/devsecops-github-actions-role"
-          import_ae "terraform_admin" "arn:aws:iam::${ACCOUNT_ID}:role/devsecops-terraform-role"
+          imp "module.eks.aws_eks_access_entry.this[\"github_admin\"]"    "${{ env.CLUSTER_NAME }}:arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-github-actions-role"
+          imp "module.eks.aws_eks_access_entry.this[\"terraform_admin\"]" "${{ env.CLUSTER_NAME }}:arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-terraform-role"
+          imp "module.eks.aws_eks_access_policy_association.this[\"github_admin\"]"    "${{ env.CLUSTER_NAME }}#arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-github-actions-role#${AE_POLICY}"
+          imp "module.eks.aws_eks_access_policy_association.this[\"terraform_admin\"]" "${{ env.CLUSTER_NAME }}#arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-terraform-role#${AE_POLICY}"
 
-      # ✅ Guard against duplicate VPCs (no heredocs; uses jq)
+      # ✅ Guard against duplicate VPCs (uses jq)
       - name: Adopt existing VPC & subnets (handle duplicates safely)
         run: |
           set -e
@@ -245,7 +237,7 @@ jobs:
 
       # --------- Deploy to EKS ---------
 
-      # Make sure we are using the Terraform role for kubectl (has cluster-admin via access entry)
+      # Use the Terraform role for kubectl (has cluster-admin via access entry)
       - name: Reconfigure AWS for kubectl (terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -278,7 +270,6 @@ jobs:
           set -e
           ROLE_ARN=$(aws sts get-caller-identity --query Arn --output text)
           echo "Caller STS ARN: $ROLE_ARN"
-          # Convert STS assumed-role ARN → IAM role ARN
           BASE_ROLE=$(echo "$ROLE_ARN" | sed -E 's#^arn:aws:sts::([0-9]+):assumed-role/([^/]+)/.*$#arn:aws:iam::\1:role/\2#')
           echo "Expecting EKS access entry for: $BASE_ROLE"
           for i in {1..40}; do
