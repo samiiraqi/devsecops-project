@@ -24,7 +24,7 @@ data "aws_iam_policy_document" "assume_role" {
   }
 }
 
-resource "aws_iam_role" "this" {
+resource "aws_iam_role" "github_actions" {
   name               = var.role_name
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
   tags               = var.tags
@@ -64,7 +64,8 @@ resource "aws_iam_policy" "deploy" {
 }
 
 resource "aws_iam_role_policy_attachment" "attach" {
-  role       = aws_iam_role.this.name
+  role       = aws_iam_role.github_actions.name
   policy_arn = aws_iam_policy.deploy.arn
 }
 
+output "role_arn" { value = aws_iam_role.github_actions.arn }

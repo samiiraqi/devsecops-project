@@ -1,29 +1,17 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.log
-.pytest_cache/
-venv/
-env/
-myenv/
-
-# Editors/OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
 # Terraform
-infra/.terraform/
-infra/*.tfstate
-infra/*.tfstate.*
-infra/crash.log
-infra/override.tf
-infra/override.tf.json
-infra/terraform.tfvars
-infra/terraform.tfvars.json
-infra/.terraform.lock.hcl
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+tf.plan
+plan.json
 
-# Docker
-*.tar
+# Python / venv / tests
+venv/
+myenv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# OS
+.DS_Store

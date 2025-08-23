@@ -16,13 +16,13 @@ variable "ecr_repo_arn" {
 variable "allow_ecr_actions" {
   description = "ECR actions to allow on the repository"
   type        = list(string)
-  default     = []
+  
 }
 
 variable "allow_eks_actions" {
   description = "EKS actions to allow (DescribeCluster needed)"
   type        = list(string)
-  default     = ["eks:DescribeCluster"]
+  
 }
 
 variable "tags" {

@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Tests + scan
+      # --------- Tests + scan ----------
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -44,33 +44,48 @@ jobs:
           python -m venv venv
           . venv/bin/activate
           pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          [ -f requirements.txt ] && pip install -r requirements.txt || true
           pip install -q pytest bandit
 
       - name: Run tests
         run: |
           . venv/bin/activate
-          python -m pytest -q
+          pytest -q
 
       - name: Security scan (bandit)
         run: |
           . venv/bin/activate
-          if [ -d app ]; then bandit -r app -ll || true; fi
+          [ -d app ] && bandit -r app -ll || true
 
-      # AWS creds
+      # --------- AWS creds -------------
       - name: Configure AWS (assume Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::156041402173:role/devsecops-terraform-role
           aws-region: ${{ env.AWS_REGION }}
 
-      # Terraform
+      # --------- Terraform -------------
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
-      # Remote state (S3 + DynamoDB)
+      # Backend bucket/table for fresh accounts
+      - name: Ensure S3 backend bucket exists
+        run: |
+          set -e
+          if ! aws s3api head-bucket --bucket "$TF_BACKEND_BUCKET" >/dev/null 2>&1; then
+            if [ "$AWS_REGION" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket "$TF_BACKEND_BUCKET"
+            else
+              aws s3api create-bucket --bucket "$TF_BACKEND_BUCKET" --create-bucket-configuration LocationConstraint="$AWS_REGION"
+            fi
+          fi
+          aws s3api put-bucket-versioning --bucket "$TF_BACKEND_BUCKET" --versioning-configuration Status=Enabled || true
+          aws s3api put-public-access-block --bucket "$TF_BACKEND_BUCKET" --public-access-block-configuration '{
+            "BlockPublicAcls": true, "IgnorePublicAcls": true, "BlockPublicPolicy": true, "RestrictPublicBuckets": true
+          }' || true
+
       - name: Ensure DynamoDB lock table exists
         run: |
           aws dynamodb describe-table --table-name "$TF_LOCK_TABLE" >/dev/null 2>&1 \
@@ -88,7 +103,7 @@ jobs:
           }
           HCL
 
-      # ✅ NEW: provide required variables automatically (org/repo/branches)
+      # Provide required vars (org/repo/branches) automatically
       - name: Write GitHub tfvars (auto)
         run: |
           ORG="${GITHUB_REPOSITORY_OWNER}"
@@ -109,66 +124,83 @@ jobs:
             -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
             -backend-config="encrypt=true"
 
-      # Adopt existing resources (no-state-safe)
-      - name: Import pre-existing core resources (idempotent, no-state-safe)
+      # Adopt existing resources (safe if empty account)
+      - name: Import pre-existing core resources (idempotent)
         run: |
           set -e
           cd infra
           imp () { terraform import "$1" "$2" >/dev/null 2>&1 || true; }
 
-          # ECR repository
-          if aws ecr describe-repositories --repository-names "${{ env.ECR_REPO }}" --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
-            imp "module.ecr.aws_ecr_repository.this" "${{ env.ECR_REPO }}"
-          fi
-          # GitHub Actions IAM role
-          if aws iam get-role --role-name "devsecops-github-actions-role" >/dev/null 2>&1; then
-            imp "module.github_oidc.aws_iam_role.github_actions" "devsecops-github-actions-role"
-          fi
-          # EKS cluster IAM role (if already exists)
-          if aws iam get-role --role-name "devsecops-eks-cluster-role" >/dev/null 2>&1; then
-            imp "module.eks.aws_iam_role.cluster" "devsecops-eks-cluster-role"
-          fi
-          # Nodegroup IAM role
-          if aws iam get-role --role-name "devsecops-eks-cluster-node-role" >/dev/null 2>&1; then
-            imp "module.eks.aws_iam_role.node" "devsecops-eks-cluster-node-role"
+          # If bucket already exists (we just created it), let TF own it
+          if aws s3api head-bucket --bucket "${{ env.TF_BACKEND_BUCKET }}" >/dev/null 2>&1; then
+            imp "module.storage.aws_s3_bucket.this" "${{ env.TF_BACKEND_BUCKET }}"
           fi
 
-      - name: Adopt existing VPC & subnets if found (idempotent, no-state-safe)
+          # If these exist, adopt; otherwise TF will create them
+          aws ecr describe-repositories --repository-names "${{ env.ECR_REPO }}" --region "${{ env.AWS_REGION }}" >/dev/null 2>&1 && \
+            imp "module.ecr.aws_ecr_repository.this" "${{ env.ECR_REPO }}" || true
+
+          aws iam get-role --role-name "devsecops-github-actions-role" >/dev/null 2>&1 && \
+            imp "module.github_oidc.aws_iam_role.github_actions" "devsecops-github-actions-role" || true
+
+          aws iam get-role --role-name "devsecops-eks-cluster-role"  >/dev/null 2>&1 && \
+            imp "module.eks.aws_iam_role.cluster" "devsecops-eks-cluster-role" || true
+
+          aws iam get-role --role-name "devsecops-eks-cluster-node-role" >/dev/null 2>&1 && \
+            imp "module.eks.aws_iam_role.node" "devsecops-eks-cluster-node-role" || true
+
+      # ✅ Guard against duplicate VPCs (no heredocs; uses jq)
+      - name: Adopt existing VPC & subnets (handle duplicates safely)
         run: |
           set -e
           cd infra
-          VPC_NAME="devsecops-vpc"
+          command -v jq >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y jq; }
+
           CIDR="10.0.0.0/16"
-          VPC_ID=$(aws ec2 describe-vpcs \
-            --filters Name=tag:Name,Values="$VPC_NAME" Name=cidr-block,Values="$CIDR" \
-            --query 'Vpcs[0].VpcId' --output text || true)
+          VPCS_JSON=$(aws ec2 describe-vpcs \
+            --filters Name=cidr-block,Values="$CIDR" \
+                      Name=tag:Name,Values="devsecops,devsecops-vpc" \
+            --query 'Vpcs[].{VpcId:VpcId,Name:Tags[?Key==`Name`]|[0].Value}' --output json)
+
+          COUNT=$(echo "$VPCS_JSON" | jq 'length')
+          echo "Found $COUNT VPC(s) with CIDR $CIDR and Name in [devsecops, devsecops-vpc]"
 
           imp () { terraform import "$1" "$2" >/dev/null 2>&1 || true; }
 
-          if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
-            echo "Found VPC $VPC_ID ($VPC_NAME). Adopting into state."
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No existing VPC found; Terraform will create devsecops-vpc."
+          elif [ "$COUNT" -eq 1 ]; then
+            VPC_ID=$(echo "$VPCS_JSON" | jq -r '.[0].VpcId')
+            echo "Adopting VPC $VPC_ID into TF state"
             imp "module.vpc.aws_vpc.this" "$VPC_ID"
             for AZ in us-east-1a us-east-1b; do
-              PUB_NAME="devsecops-public-$AZ"
-              PRV_NAME="devsecops-private-$AZ"
-              PUB_ID=$(aws ec2 describe-subnets --filters Name=vpc-id,Values="$VPC_ID" Name=tag:Name,Values="$PUB_NAME" --query 'Subnets[0].SubnetId' --output text || true)
-              PRV_ID=$(aws ec2 describe-subnets --filters Name=vpc-id,Values="$VPC_ID" Name=tag:Name,Values="$PRV_NAME" --query 'Subnets[0].SubnetId' --output text || true)
-              [ -n "$PUB_ID" ] && [ "$PUB_ID" != "None" ] && imp "module.vpc.aws_subnet.public[$AZ]" "$PUB_ID"
-              [ -n "$PRV_ID" ] && [ "$PRV_ID" != "None" ] && imp "module.vpc.aws_subnet.private[$AZ]" "$PRV_ID"
+              for KIND in public private; do
+                NAME="devsecops-${KIND}-${AZ}"
+                SID=$(aws ec2 describe-subnets \
+                  --filters Name=vpc-id,Values="$VPC_ID" Name=tag:Name,Values="$NAME" \
+                  --query 'Subnets[0].SubnetId' --output text || true)
+                [ -n "$SID" ] && [ "$SID" != "None" ] && imp "module.vpc.aws_subnet.${KIND}[$AZ]" "$SID" || true
+              done
             done
           else
-            echo "No existing VPC found; Terraform will create one."
+            echo "::error::Detected TWO VPCs (duplicate). Clean up extra VPC in AWS Console to proceed."
+            echo "$VPCS_JSON"
+            exit 1
           fi
 
       # Clear stale TF lock (if any)
       - name: Clear stale Terraform lock (DynamoDB)
         run: |
           LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
-          aws dynamodb delete-item \
-            --table-name "$TF_LOCK_TABLE" \
-            --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}" >/dev/null 2>&1 || true
+          aws dynamodb delete-item --table-name "$TF_LOCK_TABLE" --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}" >/dev/null 2>&1 || true
 
-      # Terraform plan/apply
+      # Remove leftover conflicts (safe even if nothing exists)
+      - name: Remove conflicting leftovers (KMS alias & CW log group)
+        run: |
+          aws kms delete-alias --alias-name "alias/eks/${CLUSTER_NAME}" >/dev/null 2>&1 || true
+          aws logs delete-log-group --log-group-name "/aws/eks/${CLUSTER_NAME}/cluster" >/dev/null 2>&1 || true
+
+      # --------- Plan & Apply ----------
       - name: Terraform Validate
         run: terraform -chdir=infra validate
 
@@ -178,7 +210,7 @@ jobs:
       - name: Terraform Apply
         run: terraform -chdir=infra apply -lock-timeout=10m -auto-approve tfplan
 
-      # Build & push image
+      # --------- Build & push image ----
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
@@ -189,7 +221,7 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
 
-      # Deploy to EKS
+      # --------- Deploy to EKS ---------
       - name: Install kubectl
         run: |
           curl -sL https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl -o kubectl
