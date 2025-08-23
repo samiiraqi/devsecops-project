@@ -244,6 +244,14 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
 
       # --------- Deploy to EKS ---------
+
+      # Make sure we are using the Terraform role for kubectl (has cluster-admin via access entry)
+      - name: Reconfigure AWS for kubectl (terraform role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::156041402173:role/devsecops-terraform-role
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Install kubectl
         run: |
           curl -sL https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl -o kubectl
@@ -265,9 +273,37 @@ jobs:
           echo "::error::EKS cluster '$CLUSTER_NAME' not found after waiting. Check Terraform logs."
           exit 1
 
+      - name: Wait for EKS access entry to be active for current role
+        run: |
+          set -e
+          ROLE_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          echo "Caller STS ARN: $ROLE_ARN"
+          # Convert STS assumed-role ARN → IAM role ARN
+          BASE_ROLE=$(echo "$ROLE_ARN" | sed -E 's#^arn:aws:sts::([0-9]+):assumed-role/([^/]+)/.*$#arn:aws:iam::\1:role/\2#')
+          echo "Expecting EKS access entry for: $BASE_ROLE"
+          for i in {1..40}; do
+            FOUND=$(aws eks list-access-entries --cluster-name "$CLUSTER_NAME" --region "$AWS_REGION" \
+              --query "accessEntries[?principalArn=='$BASE_ROLE'].principalArn" --output text || true)
+            if [ "$FOUND" = "$BASE_ROLE" ]; then
+              echo "Access entry present for $BASE_ROLE"
+              exit 0
+            fi
+            echo "Waiting for access entry to propagate... ($i/40)"
+            sleep 10
+          done
+          echo "::error::No EKS access entry found for $BASE_ROLE"
+          aws eks list-access-entries --cluster-name "$CLUSTER_NAME" --region "$AWS_REGION" || true
+          exit 1
+
       - name: Update kubeconfig
         run: |
           aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Sanity check RBAC (can we manage deployments?)
+        run: |
+          kubectl auth can-i get deployments -n "$K8S_NAMESPACE"
+          kubectl auth can-i patch deployments -n "$K8S_NAMESPACE"
+          kubectl auth can-i list pods -n "$K8S_NAMESPACE"
 
       - name: Apply manifests & set image to SHA
         run: |
