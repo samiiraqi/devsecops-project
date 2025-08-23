@@ -237,7 +237,13 @@ jobs:
 
       # --------- Deploy to EKS ---------
 
-      # (Optional) print identity we have right now
+      # Be 100% sure we're using the Terraform role for kubectl
+      - name: Switch to Terraform role for kubectl
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Who am I (AWS) before kubectl?
         run: aws sts get-caller-identity
 
@@ -262,14 +268,12 @@ jobs:
           echo "::error::EKS cluster '$CLUSTER_NAME' not found after waiting. Check Terraform logs."
           exit 1
 
-      # 🔒 Force kubectl to authenticate as the Terraform role (even if current env is GH role)
-      - name: Update kubeconfig (use Terraform role for auth tokens)
+      # Fresh kubeconfig using current (terraform) creds — no --role-arn
+      - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION" \
-            --role-arn "$TERRAFORM_ROLE_ARN" --alias "$CLUSTER_NAME"
+          rm -f ~/.kube/config
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
           kubectl config current-context
-          # show the exec args to confirm role-arn is embedded
-          yq -r '.users[0].user.exec.args' ~/.kube/config || cat ~/.kube/config
 
       - name: Sanity check RBAC (can we manage deployments?)
         run: |
