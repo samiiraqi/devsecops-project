@@ -63,6 +63,12 @@ jobs:
           role-to-assume: arn:aws:iam::156041402173:role/devsecops-terraform-role
           aws-region: ${{ env.AWS_REGION }}
 
+      # ✅ Install Terraform (fixes "terraform: command not found")
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
       # ---- Remote Terraform state (S3 + DynamoDB) --------------------------
       - name: Ensure DynamoDB lock table exists
         run: |
