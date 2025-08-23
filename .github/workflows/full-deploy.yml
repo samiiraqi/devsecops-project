@@ -237,12 +237,15 @@ jobs:
 
       # --------- Deploy to EKS ---------
 
-      # Use the Terraform role for kubectl (has cluster-admin via access entry)
-      - name: Reconfigure AWS for kubectl (terraform role)
+      # Force Terraform role before ANY kubectl
+      - name: Switch to Terraform role for kubectl
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::156041402173:role/devsecops-terraform-role
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Who am I (AWS) before kubectl?
+        run: aws sts get-caller-identity
 
       - name: Install kubectl
         run: |
