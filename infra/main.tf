@@ -26,7 +26,7 @@ module "vpc" {
 module "ecr" {
   source          = "./modules/ecr"
   repository_name = local.name
-  create_kms_key  = false
+  
   tags            = var.tags
 }
 
