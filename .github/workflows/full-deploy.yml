@@ -228,12 +228,21 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push image (tag = commit SHA)
+      # ⛳️ NEW: Skip build/push if the immutable tag already exists
+      - name: Build (if tag missing) and push image
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
+          set -e
+          if aws ecr describe-images \
+               --repository-name "$ECR_REPO" \
+               --image-ids imageTag="$IMAGE_TAG" \
+               --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "ECR tag $IMAGE_TAG already exists; skipping build/push."
+          else
+            docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
+            docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
+          fi
 
       # --------- Deploy to EKS ---------
 
@@ -268,7 +277,6 @@ jobs:
           echo "::error::EKS cluster '$CLUSTER_NAME' not found after waiting. Check Terraform logs."
           exit 1
 
-      # Fresh kubeconfig using current (terraform) creds — no --role-arn
       - name: Update kubeconfig
         run: |
           rm -f ~/.kube/config
