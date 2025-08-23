@@ -34,14 +34,16 @@ jobs:
           role-to-assume: ${{ env.TERRAFORM_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Delete K8s first to drop the LoadBalancer (stop costs)
+      # 1) Drop Service/ELB first to stop costs
       - name: "Install kubectl"
+        shell: bash
         run: |
           curl -sL "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o kubectl
           install -m 0755 kubectl /usr/local/bin/kubectl
           kubectl version --client=true
 
       - name: "Delete Kubernetes manifests (ok if cluster/files missing)"
+        shell: bash
         continue-on-error: true
         run: |
           rm -f ~/.kube/config
@@ -49,23 +51,27 @@ jobs:
           if [ -d k8s ]; then
             kubectl delete -f k8s/ --ignore-not-found=true || true
           fi
-          # Wait a bit for the ELB to be released
+          # Wait a bit for ELB to be released
           sleep 60
 
-      # Terraform destroy using existing S3/Dynamo backend
+      # 2) Terraform destroy with S3/Dynamo backend
       - name: "Setup Terraform"
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
       - name: "Write backend stub (S3)"
+        shell: bash
         run: |
           mkdir -p infra
           cat > infra/backend.tf <<'HCL'
-          terraform { backend "s3" {} }
+          terraform {
+            backend "s3" {}
+          }
           HCL
 
       - name: "Terraform Init"
+        shell: bash
         run: |
           terraform -chdir=infra init -upgrade \
             -backend-config="bucket=${TF_BACKEND_BUCKET}" \
@@ -75,27 +81,31 @@ jobs:
             -backend-config="encrypt=true"
 
       - name: "Terraform Plan (destroy)"
+        shell: bash
         run: terraform -chdir=infra plan -destroy -lock-timeout=10m -out=tfplan
 
       - name: "Terraform Apply (destroy)"
+        shell: bash
         run: terraform -chdir=infra apply -lock-timeout=10m -auto-approve tfplan
 
-      # Best-effort: clear the state lock row
+      # 3) Cleanup lock + (optional) backend
       - name: "Delete DynamoDB lock row (best-effort)"
+        shell: bash
         continue-on-error: true
         run: |
           LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
           aws dynamodb delete-item --table-name "$TF_LOCK_TABLE" --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}" >/dev/null 2>&1 || true
 
-      # Optional: fully remove backend (dangerous, erases state)
       - name: "Delete backend bucket & lock table (DANGEROUS)"
         if: ${{ github.event.inputs.delete_backend == 'yes' }}
+        shell: bash
         continue-on-error: true
         run: |
           aws s3 rb "s3://${TF_BACKEND_BUCKET}" --force || true
           aws dynamodb delete-table --table-name "$TF_LOCK_TABLE" || true
 
       - name: "Cost hotspots checklist"
+        shell: bash
         run: |
           echo "Check in AWS Console for stragglers:"
           echo "- NAT Gateways (expensive) -> VPC console"
