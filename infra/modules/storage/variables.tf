@@ -1,18 +1,22 @@
 variable "bucket_name" {
-  type = string
+  description = "Exact S3 bucket name to create"
+  type        = string
 }
 
 variable "create_kms" {
-  type    = bool
-  default = true
+  description = "NOT used. SSE-S3 (AES256) only."
+  type        = bool
+  default     = false
 }
 
 variable "force_destroy" {
-  type    = bool
-  default = false
+  description = "Allow destroying non-empty bucket"
+  type        = bool
+  default     = true
 }
 
 variable "tags" {
-  type    = map(string)
-  default = {}
+  description = "Tags to apply"
+  type        = map(string)
+  default     = {}
 }

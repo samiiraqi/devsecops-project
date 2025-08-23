@@ -1,9 +1,7 @@
-# Use the EXISTING GitHub OIDC provider (already created via CloudShell)
 data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
 
-# Trust policy for your GitHub repo/branch
 data "aws_iam_policy_document" "assume_role" {
   statement {
     effect = "Allow"
@@ -26,14 +24,12 @@ data "aws_iam_policy_document" "assume_role" {
   }
 }
 
-# Role GitHub Actions will assume (name must match what you use elsewhere)
-resource "aws_iam_role" "github_actions" {
+resource "aws_iam_role" "this" {
   name               = var.role_name
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
   tags               = var.tags
 }
 
-# Permissions for that role (ECR push/pull, EKS describe, STS identity, etc.)
 data "aws_iam_policy_document" "deploy" {
   statement {
     sid       = "ECRRepo"
@@ -48,13 +44,13 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["*"]
   }
   statement {
-    sid       = "EKSPerms"
+    sid       = "EksDescribe"
     effect    = "Allow"
     actions   = var.allow_eks_actions
     resources = ["*"]
   }
   statement {
-    sid       = "STS"
+    sid       = "STSIdentity"
     effect    = "Allow"
     actions   = ["sts:GetCallerIdentity"]
     resources = ["*"]
@@ -68,7 +64,7 @@ resource "aws_iam_policy" "deploy" {
 }
 
 resource "aws_iam_role_policy_attachment" "attach" {
-  role       = aws_iam_role.github_actions.name
+  role       = aws_iam_role.this.name
   policy_arn = aws_iam_policy.deploy.arn
 }
 

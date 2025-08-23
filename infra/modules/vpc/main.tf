@@ -1,30 +1,32 @@
-data "aws_availability_zones" "available" { state = "available" }
+data "aws_availability_zones" "available" {}
 
+resource "aws_vpc" "this" {
+  cidr_block           = var.cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+  tags                 = merge(var.tags, { Name = "${var.name}-vpc" })
+}
+
+# Create var.az_count public & private subnets
 locals {
-  azs             = slice(data.aws_availability_zones.available.names, 0, var.az_count)
-  public_subnets  = [for i, _ in local.azs : cidrsubnet(var.cidr, 8, i)]
-  private_subnets = [for i, _ in local.azs : cidrsubnet(var.cidr, 8, i + 100)]
+  azs = slice(data.aws_availability_zones.available.names, 0, var.az_count)
 }
 
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.8"
-
-  name = var.name
-  cidr = var.cidr
-
-  azs             = local.azs
-  public_subnets  = local.public_subnets
-  private_subnets = local.private_subnets
-
-  enable_nat_gateway       = true
-  single_nat_gateway       = true
-  enable_dns_hostnames     = true
-  enable_dns_support       = true
-  map_public_ip_on_launch  = false
-
-  public_subnet_tags  = { "kubernetes.io/role/elb" = "1" }
-  private_subnet_tags = { "kubernetes.io/role/internal-elb" = "1" }
-
-  tags = var.tags
+resource "aws_subnet" "public" {
+  for_each                = toset(local.azs)
+  vpc_id                  = aws_vpc.this.id
+  cidr_block              = cidrsubnet(var.cidr, 8, index(local.azs, each.key))
+  availability_zone       = each.key
+  map_public_ip_on_launch = true
+  tags                    = merge(var.tags, { Name = "${var.name}-public-${each.key}" })
 }
+
+resource "aws_subnet" "private" {
+  for_each          = toset(local.azs)
+  vpc_id            = aws_vpc.this.id
+  cidr_block        = cidrsubnet(var.cidr, 8, 100 + index(local.azs, each.key))
+  availability_zone = each.key
+  tags              = merge(var.tags, { Name = "${var.name}-private-${each.key}" })
+}
+
+/* IGW, NAT, route tables etc. — keep your working setup here */

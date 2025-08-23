@@ -1,24 +1,32 @@
 variable "role_name" {
-  type = string
+  description = "Name of the IAM role to create for GitHub Actions"
+  type        = string
 }
 
 variable "subjects" {
-  type = list(string)
+  description = "List of allowed sub claims: repo:OWNER/REPO:ref:refs/heads/BRANCH"
+  type        = list(string)
 }
 
 variable "ecr_repo_arn" {
-  type = string
+  description = "ARN of the ECR repo the CI needs to push to"
+  type        = string
 }
 
 variable "allow_ecr_actions" {
-  type = list(string)
+  description = "ECR actions to allow on the repository"
+  type        = list(string)
+  default     = []
 }
 
 variable "allow_eks_actions" {
-  type = list(string)
+  description = "EKS actions to allow (DescribeCluster needed)"
+  type        = list(string)
+  default     = ["eks:DescribeCluster"]
 }
 
 variable "tags" {
-  type    = map(string)
-  default = {}
+  description = "Tags to apply"
+  type        = map(string)
+  default     = {}
 }

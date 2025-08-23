@@ -7,8 +7,8 @@ variable "cidr" {
 }
 
 variable "az_count" {
-  type    = number
-  default = 2
+  type = number
+
 }
 
 variable "tags" {

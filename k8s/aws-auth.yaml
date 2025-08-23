@@ -10,7 +10,3 @@ data:
       groups:
         - system:bootstrappers
         - system:nodes
-    - rolearn: arn:aws:iam::156041402173:role/devsecops-github-actions-role
-      username: github-actions
-      groups:
-        - system:masters

@@ -1,62 +1,89 @@
+############################
+# Global / project settings
+############################
+
 variable "aws_region" {
-  type    = string
-  default = "us-east-1"
+  description = "AWS region to deploy to"
+  type        = string
+  default     = "us-east-1"
 }
 
 variable "name_prefix" {
-  type    = string
-  default = "devsecops"
+  description = "Base name/prefix for all resources"
+  type        = string
+  default     = "devsecops"
 }
 
 variable "tags" {
-  type = map(string)
+  description = "Default tags applied to all resources"
+  type        = map(string)
   default = {
-    Project   = "flask-app-k8s"
-    ManagedBy = "terraform"
-    Env       = "prod"
+    Project = "devsecops"
+    Managed = "terraform"
   }
 }
 
-# GitHub OIDC mapping
-variable "github_org" {
-  type    = string
-  default = "samiiraqi"
-}
+############################
+# Networking (VPC)
+############################
 
-variable "github_repo" {
-  type    = string
-  default = "flask-app-k8s"
-}
-
-variable "github_branches" {
-  type    = list(string)
-  default = ["main"]
-}
-
-# Networking
 variable "vpc_cidr" {
-  type    = string
-  default = "10.20.0.0/16"
+  description = "VPC CIDR"
+  type        = string
+  default     = "10.0.0.0/16"
 }
 
 variable "az_count" {
-  type    = number
-  default = 2
+  description = "Number of AZs/subnets to create"
+  type        = number
+  default     = 2
 }
 
+############################
+# GitHub OIDC / CI
+############################
+
+variable "github_org" {
+  description = "GitHub org (owner)"
+  type        = string
+}
+
+variable "github_repo" {
+  description = "GitHub repository name (without owner)"
+  type        = string
+}
+
+variable "github_branches" {
+  description = "Branches allowed to assume the role (e.g., [\"main\"])"
+  type        = list(string)
+  default     = ["main"]
+}
+
+############################
 # EKS
+############################
+
 variable "kubernetes_version" {
-  type    = string
-  default = "1.30"
+  description = "EKS Kubernetes version (e.g., 1.29)"
+  type        = string
+  default     = "1.29"
 }
 
 variable "cluster_endpoint_public_access_cidrs" {
-  type    = list(string)
-  default = ["0.0.0.0/0"]
+  description = "Allowed CIDRs to reach EKS public endpoint"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
 
-# Storage
+############################
+# App storage (S3)
+############################
+
 variable "app_bucket_name" {
-  type    = string
-  default = "flask-app-k8s-156041402173-app"
+  description = <<EOT
+Optional explicit S3 bucket name. If left empty, a unique, deterministic
+name will be generated as: <name_prefix>-<account_id>-<region>
+EOT
+  type        = string
+  default     = ""
 }

@@ -1,14 +1,6 @@
-variable "name" {
-  type = string
-}
-
-variable "kubernetes_version" {
-  type = string
-}
-
-variable "vpc_id" {
-  type = string
-}
+variable "name" { type = string }
+variable "kubernetes_version" { type = string }
+variable "vpc_id" { type = string }
 
 variable "private_subnet_ids" {
   type = list(string)
@@ -19,29 +11,32 @@ variable "public_subnet_ids" {
 }
 
 variable "cluster_endpoint_public_access_cidrs" {
-  type = list(string)
+  type    = list(string)
+  default = ["0.0.0.0/0"]
 }
 
-variable "map_roles" {
-  type = list(object({
-    rolearn  = string
-    username = string
-    groups   = list(string)
+# Map of access entries (principal_arn + policy associations)
+variable "access_entries" {
+  type = map(object({
+    principal_arn = string
+    policy_associations = map(object({
+      policy_arn = string
+      access_scope = object({
+        type       = string # "cluster" or "namespace"
+        namespaces = optional(list(string))
+      })
+    }))
   }))
-  default = []
+  default = {}
 }
 
 variable "node_role_name" {
-  type = string
+  type        = string
+  description = "Name for worker node role"
+  default     = "eks-node-role"
 }
 
 variable "tags" {
   type    = map(string)
   default = {}
-}
-
-variable "access_entries" {
-  description = "EKS access entries to grant IAM principals cluster access"
-  type        = any
-  default     = {}
 }

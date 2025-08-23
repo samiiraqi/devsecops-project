@@ -1,2 +1,3 @@
-output "cluster_name"       { value = module.eks.cluster_name }
-output "oidc_provider_arn"  { value = module.eks.oidc_provider_arn }
+output "cluster_name" { value = aws_eks_cluster.this.name }
+output "cluster_endpoint" { value = aws_eks_cluster.this.endpoint }
+output "cluster_arn" { value = aws_eks_cluster.this.arn }
