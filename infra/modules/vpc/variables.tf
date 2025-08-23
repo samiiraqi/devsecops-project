@@ -1,17 +1,20 @@
 variable "name" {
-  type = string
+  description = "Base name for resources"
+  type        = string
 }
 
 variable "cidr" {
-  type = string
+  description = "VPC CIDR"
+  type        = string
 }
 
 variable "az_count" {
-  type = number
-
+  description = "Number of AZs to use (1-3 typical)"
+  type        = number
 }
 
 variable "tags" {
-  type    = map(string)
-  default = {}
+  description = "Common tags"
+  type        = map(string)
+  default     = {}
 }
