@@ -35,20 +35,26 @@ data "aws_iam_policy_document" "deploy" {
     sid       = "ECRRepo"
     effect    = "Allow"
     actions   = var.allow_ecr_actions
-    resources = [var.ecr_repo_arn, "${var.ecr_repo_arn}/*"]
+    resources = [
+      var.ecr_repo_arn,
+      "${var.ecr_repo_arn}/*"
+    ]
   }
+
   statement {
     sid       = "ECRAuth"
     effect    = "Allow"
     actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
   }
+
   statement {
     sid       = "EksDescribe"
     effect    = "Allow"
     actions   = var.allow_eks_actions
     resources = ["*"]
   }
+
   statement {
     sid       = "STSIdentity"
     effect    = "Allow"
@@ -67,5 +73,3 @@ resource "aws_iam_role_policy_attachment" "attach" {
   role       = aws_iam_role.github_actions.name
   policy_arn = aws_iam_policy.deploy.arn
 }
-
-output "role_arn" { value = aws_iam_role.github_actions.arn }
