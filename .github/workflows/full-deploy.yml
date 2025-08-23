@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ---- Tests + scan -----------------------------------------------------
+      # Tests + scan
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -57,20 +57,20 @@ jobs:
           . venv/bin/activate
           if [ -d app ]; then bandit -r app -ll || true; fi
 
-      # ---- AWS creds --------------------------------------------------------
+      # AWS creds
       - name: Configure AWS (assume Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::156041402173:role/devsecops-terraform-role
           aws-region: ${{ env.AWS_REGION }}
 
-      # Install Terraform
+      # Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
-      # ---- Remote Terraform state (S3 + DynamoDB) --------------------------
+      # Remote state (S3 + DynamoDB)
       - name: Ensure DynamoDB lock table exists
         run: |
           aws dynamodb describe-table --table-name "$TF_LOCK_TABLE" >/dev/null 2>&1 \
@@ -83,7 +83,9 @@ jobs:
       - name: Write backend stub (S3)
         run: |
           cat > infra/backend.tf <<'HCL'
-          terraform { backend "s3" {} }
+          terraform {
+            backend "s3" {}
+          }
           HCL
 
       - name: Terraform Init (S3 backend)
@@ -95,7 +97,7 @@ jobs:
             -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
             -backend-config="encrypt=true"
 
-      # ---- Adopt existing resources (no-state-safe) -------------------------
+      # Adopt existing resources (no-state-safe)
       - name: Import pre-existing core resources (idempotent, no-state-safe)
         run: |
           set -e
@@ -153,13 +155,13 @@ jobs:
             echo "No existing VPC found; Terraform will create one."
           fi
 
-      # ---- Clear leftovers that cause conflicts -----------------------------
+      # Clear leftovers that cause conflicts
       - name: Remove conflicting leftovers (KMS alias & CW log group)
         run: |
           aws kms delete-alias --alias-name "alias/eks/${CLUSTER_NAME}" >/dev/null 2>&1 || true
           aws logs delete-log-group --log-group-name "/aws/eks/${CLUSTER_NAME}/cluster" >/dev/null 2>&1 || true
 
-      # ---- Terraform plan/apply --------------------------------------------
+      # Terraform plan/apply
       - name: Terraform Validate
         run: terraform -chdir=infra validate
 
@@ -169,7 +171,7 @@ jobs:
       - name: Terraform Apply
         run: terraform -chdir=infra apply -auto-approve tfplan
 
-      # ---- Build & push image ----------------------------------------------
+      # Build & push image
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
@@ -180,14 +182,13 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
 
-      # ---- Deploy to EKS ----------------------------------------------------
+      # Deploy to EKS
       - name: Install kubectl
         run: |
           curl -sL https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl -o kubectl
           install -m 0755 kubectl /usr/local/bin/kubectl
           kubectl version --client=true
 
-      # Wait for cluster to exist (avoid 404)
       - name: Wait for EKS cluster to exist
         run: |
           set -e
