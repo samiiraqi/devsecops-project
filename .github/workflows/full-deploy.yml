@@ -142,8 +142,10 @@ jobs:
 
           aws iam get-role --role-name "devsecops-github-actions-role" >/dev/null 2>&1 && \
             imp "module.github_oidc.aws_iam_role.github_actions" "devsecops-github-actions-role" || true
+
           aws iam get-role --role-name "devsecops-eks-cluster-role"  >/dev/null 2>&1 && \
             imp "module.eks.aws_iam_role.cluster" "devsecops-eks-cluster-role" || true
+
           aws iam get-role --role-name "devsecops-eks-cluster-node-role" >/dev/null 2>&1 && \
             imp "module.eks.aws_iam_role.node" "devsecops-eks-cluster-node-role" || true
 
@@ -153,6 +155,21 @@ jobs:
                  --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
             imp "module.eks.aws_eks_node_group.default" "${{ env.CLUSTER_NAME }}:${{ env.CLUSTER_NAME }}-ng"
           fi
+
+          # ✅ EKS access entries + policy associations (import if already exist)
+          AE_POLICY="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          import_ae () {
+            local key="$1"
+            local arn="$2"
+            if aws eks list-access-entries --cluster-name "${CLUSTER_NAME}" \
+                 --query "accessEntries[?principalArn=='${arn}'].principalArn" \
+                 --output text --region "${AWS_REGION}" | grep -q "${arn}"; then
+              imp "module.eks.aws_eks_access_entry.this[\"${key}\"]" "${CLUSTER_NAME}:${arn}"
+              imp "module.eks.aws_eks_access_policy_association.this[\"${key}\"]" "${CLUSTER_NAME}#${arn}#${AE_POLICY}"
+            fi
+          }
+          import_ae "github_admin"    "arn:aws:iam::${ACCOUNT_ID}:role/devsecops-github-actions-role"
+          import_ae "terraform_admin" "arn:aws:iam::${ACCOUNT_ID}:role/devsecops-terraform-role"
 
       # ✅ Guard against duplicate VPCs (no heredocs; uses jq)
       - name: Adopt existing VPC & subnets (handle duplicates safely)
