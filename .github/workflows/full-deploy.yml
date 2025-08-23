@@ -142,12 +142,17 @@ jobs:
 
           aws iam get-role --role-name "devsecops-github-actions-role" >/dev/null 2>&1 && \
             imp "module.github_oidc.aws_iam_role.github_actions" "devsecops-github-actions-role" || true
-
           aws iam get-role --role-name "devsecops-eks-cluster-role"  >/dev/null 2>&1 && \
             imp "module.eks.aws_iam_role.cluster" "devsecops-eks-cluster-role" || true
-
           aws iam get-role --role-name "devsecops-eks-cluster-node-role" >/dev/null 2>&1 && \
             imp "module.eks.aws_iam_role.node" "devsecops-eks-cluster-node-role" || true
+
+          # ✅ EKS node group (import if it already exists to avoid 409 ResourceInUse)
+          if aws eks describe-nodegroup --cluster-name "${{ env.CLUSTER_NAME }}" \
+                 --nodegroup-name "${{ env.CLUSTER_NAME }}-ng" \
+                 --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
+            imp "module.eks.aws_eks_node_group.default" "${{ env.CLUSTER_NAME }}:${{ env.CLUSTER_NAME }}-ng"
+          fi
 
       # ✅ Guard against duplicate VPCs (no heredocs; uses jq)
       - name: Adopt existing VPC & subnets (handle duplicates safely)
@@ -194,7 +199,7 @@ jobs:
           LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
           aws dynamodb delete-item --table-name "$TF_LOCK_TABLE" --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}" >/dev/null 2>&1 || true
 
-      # Remove leftover conflicts (safe even if nothing exists)
+      # Remove leftover conflicts (KMS alias & CW log group)
       - name: Remove conflicting leftovers (KMS alias & CW log group)
         run: |
           aws kms delete-alias --alias-name "alias/eks/${CLUSTER_NAME}" >/dev/null 2>&1 || true
