@@ -17,7 +17,7 @@ resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSClusterPolicy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-# Node IAM role (fixed name pattern)
+# Node IAM role (fixed pattern)
 resource "aws_iam_role" "node" {
   name = "${var.name}-eks-cluster-node-role"
   assume_role_policy = jsonencode({
@@ -46,13 +46,32 @@ resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryReadOn
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# EKS Cluster
+# >>> ADD BACK the cluster Security Group so Terraform doesn't plan to destroy it
+resource "aws_security_group" "cluster" {
+  name        = "${var.name}-eks-cluster-sg"
+  description = "EKS cluster security group"
+  vpc_id      = var.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+}
+
+# EKS Cluster (do NOT reference the SG above; changing that would recreate the cluster)
 resource "aws_eks_cluster" "this" {
   name     = var.name
   role_arn = aws_iam_role.cluster.arn
   version  = var.kubernetes_version
 
-  # Allow both Access Entries and legacy aws-auth
   access_config {
     authentication_mode = "API_AND_CONFIG_MAP"
   }
@@ -63,6 +82,7 @@ resource "aws_eks_cluster" "this" {
     endpoint_public_access  = true
     endpoint_private_access = false
     public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
+    # DO NOT set security_group_ids here (to avoid replacement)
   }
 
   tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
@@ -85,7 +105,7 @@ resource "aws_eks_node_group" "default" {
   tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
 }
 
-# Access Entries (from var.access_entries)
+# Access Entries from input map
 resource "aws_eks_access_entry" "this" {
   for_each      = var.access_entries
   cluster_name  = aws_eks_cluster.this.name
