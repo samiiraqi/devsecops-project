@@ -19,11 +19,6 @@ variable "node_subnet_ids" {
   type = list(string)
 }
 
-variable "cluster_endpoint_public_access_cidrs" {
-  type    = list(string)
-  default = ["0.0.0.0/0"]
-}
-
 variable "instance_types" {
   type    = list(string)
   default = ["t3.medium"]
@@ -44,7 +39,18 @@ variable "max_size" {
   default = 3
 }
 
+variable "cluster_endpoint_public_access_cidrs" {
+  type    = list(string)
+  default = ["0.0.0.0/0"]
+}
+
 variable "tags" {
   type    = map(string)
+  default = {}
+}
+
+# NEW: access entries map (keyed by a friendly name)
+variable "access_entries" {
+  type    = map(any)
   default = {}
 }

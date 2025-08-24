@@ -19,7 +19,7 @@ module "vpc" {
   tags     = var.tags
 }
 
-# --- ECR (explicit lifecycle_policy to satisfy module requirement) ---
+# --- ECR ---
 module "ecr" {
   source                  = "./modules/ecr"
   repository_name         = local.name
@@ -57,23 +57,54 @@ module "github_oidc" {
   allow_eks_actions = ["eks:DescribeCluster"]
 }
 
-# --- EKS (cluster + managed node group in PUBLIC subnets) ---
+# --- EKS (public subnets for both control plane ENIs & nodes) ---
 module "eks" {
-  source                             = "./modules/eks"
-  name                               = local.name
-  kubernetes_version                 = var.kubernetes_version
-  vpc_id                             = module.vpc.vpc_id
-  cluster_subnet_ids                 = module.vpc.public_subnet_ids
-  node_subnet_ids                    = module.vpc.public_subnet_ids
-  instance_types                     = var.instance_types
-  min_size                           = 2
-  desired_size                       = 2
-  max_size                           = 3
+  source                               = "./modules/eks"
+  name                                 = local.name
+  kubernetes_version                   = var.kubernetes_version
+  vpc_id                               = module.vpc.vpc_id
+  cluster_subnet_ids                   = module.vpc.public_subnet_ids
+  node_subnet_ids                      = module.vpc.public_subnet_ids
+  instance_types                       = var.instance_types
+  min_size                             = 2
+  desired_size                         = 2
+  max_size                             = 3
   cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
-  tags                               = var.tags
+  tags                                 = var.tags
+
+  # >>> NEW: grant cluster admin to GH Actions, Terraform role, and user 'sami'
+  access_entries = {
+    github_admin = {
+      principal_arn = "arn:aws:iam::156041402173:role/devsecops-github-actions-role"
+      policy_associations = {
+        admin = {
+          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
+        }
+      }
+    }
+    terraform_admin = {
+      principal_arn = "arn:aws:iam::156041402173:role/devsecops-terraform-role"
+      policy_associations = {
+        admin = {
+          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
+        }
+      }
+    }
+    sami_admin = {
+      principal_arn = "arn:aws:iam::156041402173:user/sami"
+      policy_associations = {
+        admin = {
+          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
+        }
+      }
+    }
+  }
 }
 
-# --- S3 storage (backend/app bucket) ---
+# --- S3 storage ---
 module "storage" {
   source        = "./modules/storage"
   bucket_name   = "${local.name}-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
