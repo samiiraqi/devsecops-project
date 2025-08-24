@@ -10,6 +10,13 @@ metadata:
   namespace: devsecops
 spec:
   replicas: 2
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: python-app
@@ -18,6 +25,7 @@ spec:
       labels:
         app: python-app
     spec:
+      terminationGracePeriodSeconds: 10
       containers:
         - name: python-app
           image: 156041402173.dkr.ecr.us-east-1.amazonaws.com/devsecops:latest
@@ -28,8 +36,12 @@ spec:
             - name: FLASK_ENV
               value: "production"
           resources:
-            requests: { cpu: "200m", memory: "256Mi" }
-            limits:   { cpu: "500m", memory: "512Mi" }
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -37,13 +49,21 @@ spec:
             capabilities:
               drop: ["ALL"]
           livenessProbe:
-            httpGet: { path: /health, port: 5000 }
+            httpGet:
+              path: /health
+              port: 5000
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
           readinessProbe:
-            httpGet: { path: /health, port: 5000 }
+            httpGet:
+              path: /health
+              port: 5000
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

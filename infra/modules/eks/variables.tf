@@ -11,12 +11,10 @@ variable "vpc_id" {
   type = string
 }
 
-# Subnets used by the EKS control plane ENIs
 variable "cluster_subnet_ids" {
   type = list(string)
 }
 
-# Subnets used by the managed node group (we'll pass PUBLIC subnets)
 variable "node_subnet_ids" {
   type = list(string)
 }
@@ -48,11 +46,5 @@ variable "max_size" {
 
 variable "tags" {
   type    = map(string)
-  default = {}
-}
-
-# Optional map of access entries to create (we use two callers below)
-variable "access_entries" {
-  type = any
   default = {}
 }

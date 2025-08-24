@@ -1,19 +1,16 @@
 resource "aws_ecr_repository" "this" {
-  name = var.repository_name
+  name                 = var.repository_name
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
   }
 
-  tags = var.tags
-
-  lifecycle {
-    # do not fight existing settings
-    ignore_changes = [
-      image_tag_mutability,
-      encryption_configuration,
-    ]
+  encryption_configuration {
+    encryption_type = "AES256"
   }
+
+  tags = var.tags
 }
 
 resource "aws_ecr_lifecycle_policy" "this" {

@@ -35,10 +35,7 @@ data "aws_iam_policy_document" "deploy" {
     sid       = "ECRRepo"
     effect    = "Allow"
     actions   = var.allow_ecr_actions
-    resources = [
-      var.ecr_repo_arn,
-      "${var.ecr_repo_arn}/*"
-    ]
+    resources = [var.ecr_repo_arn, "${var.ecr_repo_arn}/*"]
   }
 
   statement {

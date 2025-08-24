@@ -1,20 +1,32 @@
-variable "name" {
-  description = "Base name for resources"
-  type        = string
-}
+variable "name" { type = string }
 
 variable "cidr" {
-  description = "VPC CIDR"
   type        = string
+  description = "VPC CIDR (e.g., 10.0.0.0/16)"
 }
 
 variable "az_count" {
-  description = "Number of AZs to use (1-3 typical)"
-  type        = number
+  type    = number
+  default = 2
+}
+
+variable "public_subnet_map" {
+  type = map(string)
+  default = {
+    "us-east-1a" = "10.0.0.0/24"
+    "us-east-1b" = "10.0.1.0/24"
+  }
+}
+
+variable "private_subnet_map" {
+  type = map(string)
+  default = {
+    "us-east-1a" = "10.0.100.0/24"
+    "us-east-1b" = "10.0.101.0/24"
+  }
 }
 
 variable "tags" {
-  description = "Common tags"
-  type        = map(string)
-  default     = {}
+  type    = map(string)
+  default = {}
 }

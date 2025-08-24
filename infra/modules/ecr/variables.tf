@@ -1,23 +1,15 @@
 variable "repository_name" {
-  description = "ECR repository name"
-  type        = string
-}
-
-variable "tags" {
-  description = "Tags to apply to the repository"
-  type        = map(string)
-  default     = {}
+  type = string
 }
 
 variable "enable_lifecycle_policy" {
-  description = "Attach a lifecycle policy to ECR"
-  type        = bool
-  default     = true
+  type    = bool
+  default = true
 }
 
 variable "lifecycle_policy" {
-  description = "Lifecycle policy JSON to attach when enabled"
   type        = string
+  description = "ECR lifecycle policy JSON"
   default     = <<JSON
 {
   "rules": [
@@ -34,4 +26,9 @@ variable "lifecycle_policy" {
   ]
 }
 JSON
+}
+
+variable "tags" {
+  type    = map(string)
+  default = {}
 }
