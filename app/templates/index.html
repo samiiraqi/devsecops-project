@@ -13,10 +13,13 @@
   <div class="container max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden transform transition-all hover:shadow-xl">
     <div class="p-8">
       <div class="text-center">
-        <h1 class="text-3xl font-bold text-gray-800 mb-6">Welcome to Greeting App</h1>
+        <!-- TEST EXPECTS THIS EXACT TEXT -->
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">Flask on EKS</h1>
+
         <div class="mb-6">
           <span class="inline-block bg-primary text-white text-xs px-2 py-1 rounded-full uppercase font-semibold tracking-wide">v8</span>
         </div>
+
         <div class="space-y-4">
           <div class="flex flex-col sm:flex-row gap-2 justify-center">
             <input type="text" id="nameInput" placeholder="Enter your name"
@@ -27,7 +30,8 @@
             </button>
           </div>
 
-          <!-- Optional: button to the change page (remove if you don't want it visible) -->
+          <!-- If you want to keep a button to the change page, leave this.
+               If you don't want it visible, you can remove this button. -->
           <button onclick="window.location.href='/change-greeting'"
                   class="w-full px-4 py-2 bg-primary text-white rounded-lg hover:bg-indigo-600 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50">
             Change Word
@@ -55,7 +59,6 @@
         resultDiv.textContent = 'Loading...';
         resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-gray-700 bg-gray-50 rounded-lg';
 
-        // IMPORTANT: encode the name for the URL
         const resp = await fetch(`/greet/${encodeURIComponent(raw)}`);
         const data = await resp.json();
 
@@ -63,7 +66,6 @@
           resultDiv.textContent = data.message;
           resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-green-600 bg-green-50 rounded-lg';
         } else {
-          // backend returns { "error": "..." } on 400
           resultDiv.textContent = data.error || 'Invalid name';
           resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
         }
@@ -73,7 +75,6 @@
       }
     }
 
-    // wire up actions
     document.getElementById('greetBtn').addEventListener('click', getGreeting);
     document.getElementById('nameInput').addEventListener('keypress', (e)=>{ if (e.key === 'Enter') getGreeting(); });
   </script>
