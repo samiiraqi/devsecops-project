@@ -172,6 +172,14 @@ jobs:
       - name: "Terraform Validate"
         shell: bash
         run: terraform -chdir=infra validate
+      - name: "Clear stale TF lock (best-effort)"
+        shell: bash
+        run: |
+          aws dynamodb delete-item \
+            --region "$AWS_REGION" \
+            --table-name "$TF_LOCK_TABLE" \
+            --key "{\"LockID\":{\"S\":\"${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}\"}}" || true
+  
 
       - name: "Terraform Plan (save JSON)"
         shell: bash
