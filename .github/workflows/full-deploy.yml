@@ -133,26 +133,35 @@ jobs:
             -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
             -backend-config="encrypt=true"
 
-      - name: "Adopt existing VPC & subnets (idempotent)"
+      - name: "Adopt existing VPC, subnets, and IGW (idempotent)"
         shell: bash
         run: |
           set -e
           cd infra
           command -v jq >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y jq; }
+          imp () { terraform state list | grep -q "^$1$" || terraform import "$1" "$2" >/dev/null 2>&1 || true; }
 
           CIDR="10.0.0.0/16"
           VPCS_JSON=$(aws ec2 describe-vpcs \
             --filters Name=cidr-block,Values="$CIDR" Name=tag:Name,Values="devsecops,devsecops-vpc" \
             --query 'Vpcs[].{VpcId:VpcId,Name:Tags[?Key==`Name`]|[0].Value}' --output json)
-
           COUNT=$(echo "$VPCS_JSON" | jq 'length')
-          echo "VPCs matching (by CIDR/name): $COUNT"
-          imp () { terraform import "$1" "$2" >/dev/null 2>&1 || true; }
 
           if [ "$COUNT" -eq 1 ]; then
             VPC_ID=$(echo "$VPCS_JSON" | jq -r '.[0].VpcId')
             echo "Adopting VPC $VPC_ID"
             imp "module.vpc.aws_vpc.this" "$VPC_ID"
+
+            # Import the IGW attached to this VPC (prevents Terraform from trying to create a new one)
+            IGW_ID=$(aws ec2 describe-internet-gateways \
+              --filters Name=attachment.vpc-id,Values="$VPC_ID" \
+              --query 'InternetGateways[0].InternetGatewayId' --output text || true)
+            if [ -n "$IGW_ID" ] && [ "$IGW_ID" != "None" ]; then
+              echo "Adopting IGW $IGW_ID"
+              imp "module.vpc.aws_internet_gateway.igw" "$IGW_ID"
+            fi
+
+            # Subnets
             for AZ in us-east-1a us-east-1b; do
               for KIND in public private; do
                 NAME="devsecops-${KIND}-${AZ}"
@@ -166,20 +175,12 @@ jobs:
             echo "$VPCS_JSON"
             exit 1
           else
-            echo "No existing VPC. Terraform will create."
+            echo "No existing VPC. Terraform will create a new one."
           fi
 
       - name: "Terraform Validate"
         shell: bash
         run: terraform -chdir=infra validate
-      - name: "Clear stale TF lock (best-effort)"
-        shell: bash
-        run: |
-          aws dynamodb delete-item \
-            --region "$AWS_REGION" \
-            --table-name "$TF_LOCK_TABLE" \
-            --key "{\"LockID\":{\"S\":\"${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}\"}}" || true
-  
 
       - name: "Terraform Plan (save JSON)"
         shell: bash
