@@ -59,9 +59,9 @@ resource "aws_security_group" "cluster" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  #lifecycle {
+   # prevent_destroy = true
+  #}
 
   tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
 }
