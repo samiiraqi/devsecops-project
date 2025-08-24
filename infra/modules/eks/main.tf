@@ -118,6 +118,20 @@ resource "aws_eks_access_entry" "terraform_admin" {
   type          = "STANDARD"
   tags          = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
 }
+# --- Local user 'sami' gets cluster-admin via EKS Access Entries ---
+resource "aws_eks_access_entry" "sami" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::156041402173:user/sami"
+  type          = "STANDARD"
+  tags          = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+}
+
+resource "aws_eks_access_policy_association" "sami_admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::156041402173:user/sami"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  access_scope { type = "cluster" }
+}
 
 resource "aws_eks_access_policy_association" "terraform_admin" {
   cluster_name  = aws_eks_cluster.this.name
