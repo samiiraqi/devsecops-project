@@ -60,45 +60,28 @@ module "github_oidc" {
 
 # --- EKS ---
 module "eks" {
-  source                               = "./modules/eks"
-  name                                 = local.name
-  kubernetes_version                   = var.kubernetes_version
-  vpc_id                               = module.vpc.vpc_id
-  private_subnet_ids                   = module.vpc.private_subnet_ids
-  public_subnet_ids                    = module.vpc.public_subnet_ids
+  source                 = "./modules/eks"
+  name                   = local.name
+  kubernetes_version     = var.kubernetes_version
+  vpc_id                 = module.vpc.vpc_id
+
+  # Control-plane ENIs across ALL subnets (public + private is okay)
+  cluster_subnet_ids     = concat(module.vpc.public_subnet_ids, module.vpc.private_subnet_ids)
+
+  # WORKER NODES → PUBLIC subnets so they have Internet egress without NAT
+  node_subnet_ids        = module.vpc.public_subnet_ids
+
   cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
 
-  # Access entries (AWS-native RBAC). Your module supports these.
-  access_entries = {
-    github_admin = {
-      principal_arn = module.github_oidc.role_arn
-      policy_associations = {
-        admin = {
-          policy_arn  = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          access_scope = {
-            type = "cluster"
-          }
-        }
-      }
-    }
-    terraform_admin = {
-      principal_arn = "arn:aws:iam::156041402173:role/devsecops-terraform-role"
-      policy_associations = {
-        admin = {
-          policy_arn  = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          access_scope = {
-            type = "cluster"
-          }
-        }
-      }
-    }
-  }
-
-  # Force node role name to your expected value
-  node_role_name = "devsecops-eks-cluster-node-role"
+  # 2 nodes, 2 replicas target
+  min_size     = 2
+  desired_size = 2
+  max_size     = 3
+  instance_types = ["t3.medium"]
 
   tags = var.tags
 }
+
 
 # --- S3 storage (no KMS) ---
 module "storage" {

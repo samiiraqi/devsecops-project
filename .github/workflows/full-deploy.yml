@@ -103,22 +103,19 @@ jobs:
       - name: "Write backend stub (S3)"
         shell: bash
         run: |
-          cat > infra/backend.tf <<'HCL'
-          terraform {
-            backend "s3" {}
-          }
-          HCL
+          mkdir -p infra
+          printf 'terraform {\n  backend "s3" {}\n}\n' > infra/backend.tf
 
       - name: "Write GitHub tfvars (auto)"
         shell: bash
         run: |
           ORG="${GITHUB_REPOSITORY_OWNER}"
           REPO="$(basename "$GITHUB_REPOSITORY")"
-          cat > infra/terraform.auto.tfvars <<EOF
-          github_org      = "${ORG}"
-          github_repo     = "${REPO}"
-          github_branches = ["main"]
-          EOF
+          {
+            printf 'github_org      = "%s"\n' "$ORG"
+            printf 'github_repo     = "%s"\n' "$REPO"
+            printf 'github_branches = ["main"]\n'
+          } > infra/terraform.auto.tfvars
           echo "Wrote infra/terraform.auto.tfvars with org=${ORG}, repo=${REPO}"
 
       - name: "Terraform Init (S3 backend)"
@@ -162,12 +159,12 @@ jobs:
             imp "module.eks.aws_eks_node_group.default" "${{ env.CLUSTER_NAME }}:${{ env.CLUSTER_NAME }}-ng"
           fi
 
-          # EKS access entries + policy associations (import regardless)
+          # EKS access entries + policy associations
           AE_POLICY="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          imp "module.eks.aws_eks_access_entry.this[\"github_admin\"]"    "${{ env.CLUSTER_NAME }}:arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-github-actions-role"
-          imp "module.eks.aws_eks_access_entry.this[\"terraform_admin\"]" "${{ env.CLUSTER_NAME }}:arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-terraform-role"
-          imp "module.eks.aws_eks_access_policy_association.this[\"github_admin\"]"    "${{ env.CLUSTER_NAME }}#arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-github-actions-role#${AE_POLICY}"
-          imp "module.eks.aws_eks_access_policy_association.this[\"terraform_admin\"]" "${{ env.CLUSTER_NAME }}#arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-terraform-role#${AE_POLICY}"
+          imp "module.eks.aws_eks_access_entry.github_admin"    "${{ env.CLUSTER_NAME }}:arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-github-actions-role"
+          imp "module.eks.aws_eks_access_entry.terraform_admin" "${{ env.CLUSTER_NAME }}:arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-terraform-role"
+          imp "module.eks.aws_eks_access_policy_association.github_admin"    "${{ env.CLUSTER_NAME }}#arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-github-actions-role#${AE_POLICY}"
+          imp "module.eks.aws_eks_access_policy_association.terraform_admin" "${{ env.CLUSTER_NAME }}#arn:aws:iam::${{ env.ACCOUNT_ID }}:role/devsecops-terraform-role#${AE_POLICY}"
 
       - name: "Adopt existing VPC & subnets (handle duplicates safely)"
         shell: bash
@@ -298,15 +295,26 @@ jobs:
         run: |
           kubectl apply -f k8s/
 
-      - name: "Auto-scale replicas if only 1 node is Ready"
+      # ======= Ensure 2 nodes and 2 replicas =======
+      - name: "Wait for at least 2 Ready nodes (up to 15m)"
         shell: bash
         run: |
-          NODES=$(kubectl get nodes --no-headers | awk '/ Ready/{c++} END{print c+0}')
-          echo "Ready nodes: $NODES"
-          if [ "$NODES" -lt 2 ]; then
-            echo "Only $NODES node Ready; scaling python-app to 1 replica for rollout."
-            kubectl -n "$K8S_NAMESPACE" scale deploy/python-app --replicas=1
-          fi
+          for i in {1..90}; do
+            READY=$(kubectl get nodes --no-headers 2>/dev/null | awk '/ Ready/{c++} END{print c+0}')
+            echo "Ready nodes: $READY"
+            if [ "$READY" -ge 2 ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Still fewer than 2 Ready nodes."
+          kubectl get nodes -o wide || true
+          exit 1
+
+      - name: "Ensure deployment replicas=2"
+        shell: bash
+        run: |
+          kubectl -n "$K8S_NAMESPACE" scale deploy/python-app --replicas=2
 
       - name: "Set image on python-app"
         env:
@@ -321,6 +329,7 @@ jobs:
         run: |
           kubectl -n "$K8S_NAMESPACE" rollout status deploy/python-app --timeout=600s
 
+      # ---------- Always-on diagnostics on failure ----------
       - name: "Debug: show resources / events / logs"
         if: ${{ failure() }}
         shell: bash

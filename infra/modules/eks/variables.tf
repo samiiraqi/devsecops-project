@@ -1,12 +1,23 @@
-variable "name" { type = string }
-variable "kubernetes_version" { type = string }
-variable "vpc_id" { type = string }
+variable "name" {
+  type = string
+}
 
-variable "private_subnet_ids" {
+variable "kubernetes_version" {
+  type    = string
+  default = "1.29"
+}
+
+variable "vpc_id" {
+  type = string
+}
+
+# Subnets used by the EKS control plane ENIs
+variable "cluster_subnet_ids" {
   type = list(string)
 }
 
-variable "public_subnet_ids" {
+# Subnets used by the managed node group (we'll pass PUBLIC subnets)
+variable "node_subnet_ids" {
   type = list(string)
 }
 
@@ -15,28 +26,33 @@ variable "cluster_endpoint_public_access_cidrs" {
   default = ["0.0.0.0/0"]
 }
 
-# Map of access entries (principal_arn + policy associations)
-variable "access_entries" {
-  type = map(object({
-    principal_arn = string
-    policy_associations = map(object({
-      policy_arn = string
-      access_scope = object({
-        type       = string # "cluster" or "namespace"
-        namespaces = optional(list(string))
-      })
-    }))
-  }))
-  default = {}
+variable "instance_types" {
+  type    = list(string)
+  default = ["t3.medium"]
 }
 
-variable "node_role_name" {
-  type        = string
-  description = "Name for worker node role"
-  default     = "eks-node-role"
+variable "min_size" {
+  type    = number
+  default = 2
+}
+
+variable "desired_size" {
+  type    = number
+  default = 2
+}
+
+variable "max_size" {
+  type    = number
+  default = 3
 }
 
 variable "tags" {
   type    = map(string)
+  default = {}
+}
+
+# Optional map of access entries to create (we use two callers below)
+variable "access_entries" {
+  type = any
   default = {}
 }

@@ -1,15 +1,14 @@
-# Cluster role
 resource "aws_iam_role" "cluster" {
-  name = "${var.name}-eks-cluster-role"
+  name               = "${var.name}-eks-cluster-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect    = "Allow"
+      Effect = "Allow"
       Principal = { Service = "eks.amazonaws.com" }
-      Action    = "sts:AssumeRole"
+      Action = "sts:AssumeRole"
     }]
   })
-  tags = var.tags
+  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSClusterPolicy" {
@@ -17,116 +16,112 @@ resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSClusterPolicy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-# Node role (you asked for fixed name)
+resource "aws_security_group" "cluster" {
+  name        = "${var.name}-eks-cluster-sg"
+  description = "EKS cluster security group"
+  vpc_id      = var.vpc_id
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+}
+
+resource "aws_eks_cluster" "this" {
+  name     = var.name
+  role_arn = aws_iam_role.cluster.arn
+  version  = var.kubernetes_version
+
+  vpc_config {
+    subnet_ids              = var.cluster_subnet_ids
+    security_group_ids      = [aws_security_group.cluster.id]
+    endpoint_public_access  = true
+    public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
+    endpoint_private_access = false
+  }
+
+  access_config {
+    authentication_mode = "API_AND_CONFIG_MAP"
+  }
+
+  bootstrap_self_managed_addons = true
+
+  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+}
+
+# ---- Node group role ----
 resource "aws_iam_role" "node" {
-  name = var.node_role_name
+  name               = "${var.name}-eks-cluster-node-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect    = "Allow"
+      Effect = "Allow"
       Principal = { Service = "ec2.amazonaws.com" }
-      Action    = "sts:AssumeRole"
+      Action = "sts:AssumeRole"
     }]
   })
-  tags = var.tags
+  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
 }
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEKSWorkerNodePolicy" {
   role       = aws_iam_role.node.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
-resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryReadOnly" {
-  role       = aws_iam_role.node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-}
 resource "aws_iam_role_policy_attachment" "node_AmazonEKS_CNI_Policy" {
   role       = aws_iam_role.node.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
-
-# Security group for cluster (simplified; you can keep your existing)
-resource "aws_security_group" "cluster" {
-  name        = "${var.name}-eks-cluster-sg"
-  description = "EKS cluster security group"
-  vpc_id      = var.vpc_id
-  tags        = var.tags
+resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryReadOnly" {
+  role       = aws_iam_role.node.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-resource "aws_eks_cluster" "this" {
-  name     = var.name
-  role_arn = aws_iam_role.cluster.arn
-
-  version = var.kubernetes_version
-  access_config {
-    authentication_mode                         = "API_AND_CONFIG_MAP"
-    bootstrap_cluster_creator_admin_permissions = true
-  }
-
-
-  vpc_config {
-    security_group_ids     = [aws_security_group.cluster.id]
-    subnet_ids             = concat(var.private_subnet_ids, var.public_subnet_ids)
-    endpoint_public_access = true
-    public_access_cidrs    = var.cluster_endpoint_public_access_cidrs
-  }
-
-  # IMPORTANT: no encryption_config here (KMS is off)
-
-  depends_on = [
-    aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy
-  ]
-
-  tags = var.tags
-}
-
-# Managed node group (basic example)
+# ---- Managed node group in PUBLIC subnets ----
 resource "aws_eks_node_group" "default" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.name}-ng"
   node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = var.private_subnet_ids
+  subnet_ids      = var.node_subnet_ids
+
+  instance_types = var.instance_types
+  ami_type       = "AL2_x86_64"
 
   scaling_config {
-    desired_size = 2
-    max_size     = 3
-    min_size     = 1
+    min_size     = var.min_size
+    desired_size = var.desired_size
+    max_size     = var.max_size
   }
 
-  ami_type       = "AL2_x86_64"
-  instance_types = ["t3.medium"]
-
-  tags = var.tags
-
-  depends_on = [
-    aws_iam_role_policy_attachment.node_AmazonEKSWorkerNodePolicy,
-    aws_iam_role_policy_attachment.node_AmazonEC2ContainerRegistryReadOnly,
-    aws_iam_role_policy_attachment.node_AmazonEKS_CNI_Policy
-  ]
+  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
 }
 
-# EKS Access Entries (maps IAM roles to cluster access policies)
-# (Provider >= 5.40 has these resources)
-resource "aws_eks_access_entry" "this" {
-  for_each      = var.access_entries
+# ---- Access entries (GitHub Actions + Terraform role) ----
+resource "aws_eks_access_entry" "github_admin" {
   cluster_name  = aws_eks_cluster.this.name
-  principal_arn = each.value.principal_arn
+  principal_arn = "arn:aws:iam::156041402173:role/devsecops-github-actions-role"
   type          = "STANDARD"
-  tags          = var.tags
+  tags          = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
 }
 
-resource "aws_eks_access_policy_association" "this" {
-  for_each = { for k, v in var.access_entries : k => v if length(v.policy_associations) > 0 }
-
+resource "aws_eks_access_policy_association" "github_admin" {
   cluster_name  = aws_eks_cluster.this.name
-  principal_arn = each.value.principal_arn
+  principal_arn = "arn:aws:iam::156041402173:role/devsecops-github-actions-role"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  access_scope { type = "cluster" }
+}
 
-  # Only one policy here; if you need multiple, split/extend
-  policy_arn = values(each.value.policy_associations)[0].policy_arn
+resource "aws_eks_access_entry" "terraform_admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::156041402173:role/devsecops-terraform-role"
+  type          = "STANDARD"
+  tags          = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+}
 
-  access_scope {
-    type       = values(each.value.policy_associations)[0].access_scope.type
-    namespaces = try(values(each.value.policy_associations)[0].access_scope.namespaces, null)
-  }
-
-  depends_on = [aws_eks_access_entry.this]
+resource "aws_eks_access_policy_association" "terraform_admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::156041402173:role/devsecops-terraform-role"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  access_scope { type = "cluster" }
 }
