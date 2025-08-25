@@ -107,7 +107,8 @@ module "eks" {
 # --- S3 storage ---
 module "storage" {
   source        = "./modules/storage"
-  bucket_name   = "${local.name}-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+  bucket_name   = "${local.name}-app-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+
   create_kms    = false
   force_destroy = false
   tags          = var.tags
