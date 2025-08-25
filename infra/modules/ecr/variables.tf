@@ -1,5 +1,6 @@
 variable "repository_name" {
   type = string
+  default = "devsecops-project"
 }
 
 variable "enable_lifecycle_policy" {
