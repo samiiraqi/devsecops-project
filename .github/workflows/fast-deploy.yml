@@ -1,10 +1,10 @@
 name: fast-deploy
 
 on:
-  push:
-    branches: ["main"]
-    paths-ignore:
-      - 'infra/**'
+  #push:
+    #branches: ["main"]
+    #paths-ignore:
+      #- 'infra/**'
   workflow_dispatch: {}
 
 env:

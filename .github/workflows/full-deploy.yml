@@ -1,10 +1,10 @@
 name: full-deploy
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - "infra/**"
+  #push:
+    #branches: ["main"]
+    #paths:
+      #- "infra/**"
   workflow_dispatch: {}
 
 env:
