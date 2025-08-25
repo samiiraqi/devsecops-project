@@ -11,13 +11,13 @@ on:
 env:
   AWS_REGION: us-east-1
   ACCOUNT_ID: "156041402173"
-  CLUSTER_NAME: devsecops
-  K8S_NAMESPACE: devsecops
+  CLUSTER_NAME: devsecops-project
+  K8S_NAMESPACE: devsecops-project
   TF_BACKEND_BUCKET: devsecops-156041402173-us-east-1
   TF_BACKEND_KEY: tfstate/infra.tfstate
   TF_LOCK_TABLE: terraform-locks
   TERRAFORM_ROLE_ARN: arn:aws:iam::156041402173:role/devsecops-terraform-role
-  ECR_REPO: devsecops
+  ECR_REPO: devsecops-project
   TF_IN_AUTOMATION: "1"
 
 permissions:

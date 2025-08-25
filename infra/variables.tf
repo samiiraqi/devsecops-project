@@ -5,7 +5,7 @@ variable "aws_region" {
 
 variable "name_prefix" {
   type    = string
-  default = "devsecops"
+  default = "devsecops-project"
 }
 
 variable "vpc_cidr" {
@@ -36,17 +36,19 @@ variable "instance_types" {
 variable "tags" {
   type = map(string)
   default = {
-    Project = "devsecops"
+    Project = "devsecops-project"
     Managed = "terraform"
   }
 }
 
 variable "github_org" {
   type = string
+  default = "samiiraqi"
 }
 
 variable "github_repo" {
   type = string
+  default = "devsecops-project"
 }
 
 variable "github_branches" {

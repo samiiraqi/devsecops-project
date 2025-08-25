@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: devsecops
+  name: devsecops-project
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: python-app
-  namespace: devsecops
+  namespace: devsecops-project
 spec:
   replicas: 2
   strategy:
@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
         - name: python-app
-          image: 156041402173.dkr.ecr.us-east-1.amazonaws.com/devsecops:latest
+          image: 156041402173.dkr.ecr.us-east-1.amazonaws.com/devsecops-project:latest
           imagePullPolicy: Always
           command: ["python"]
           args: ["-m", "app.main"]
