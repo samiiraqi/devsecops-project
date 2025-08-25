@@ -2,7 +2,7 @@ aws_region  = "us-east-1"
 name_prefix = "devsecops"
 
 github_org      = "samiiraqi"
-github_repo     = "flask-app-k8s"
+github_repo     = "devsecops-project"
 github_branches = ["main"]
 
 vpc_cidr = "10.0.0.0/16"
