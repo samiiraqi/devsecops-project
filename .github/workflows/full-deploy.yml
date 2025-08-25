@@ -12,7 +12,7 @@ env:
   ACCOUNT_ID: "156041402173"
   ECR_REGISTRY: 156041402173.dkr.ecr.us-east-1.amazonaws.com
   ECR_REPO: devsecops-project
-  CLUSTER_NAME: devsecops-project
+  CLUSTER_NAME: devsecops
   K8S_NAMESPACE: devsecops-project
   TF_BACKEND_BUCKET: devsecops-156041402173-us-east-1
   TF_BACKEND_KEY: tfstate/devsecops-project.tfstate
@@ -195,6 +195,9 @@ jobs:
         run: |
           terraform -chdir=infra plan -lock-timeout=10m -input=false -out=tfplan
           terraform -chdir=infra show -json tfplan > /tmp/plan.json
+      - name: "Debug: Show planned EKS cluster"
+        run: |
+         jq -r '.resource_changes[] | select(.type == "aws_eks_cluster")' /tmp/plan.json || echo "No EKS cluster in plan"
 
       - name: "FAIL if plan would create NAT/EIP (safety guard)"
         shell: bash
@@ -215,6 +218,9 @@ jobs:
       - name: "Terraform Apply"
         shell: bash
         run: terraform -chdir=infra apply -lock-timeout=10m -auto-approve tfplan
+      - name: "Debug: List EKS clusters after apply"
+        shell: bash
+        run: aws eks list-clusters --region ${{ env.AWS_REGION }}
 
       - name: "Login to ECR"
         uses: aws-actions/amazon-ecr-login@v2
@@ -244,6 +250,10 @@ jobs:
           curl -sL "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o kubectl
           install -m 0755 kubectl /usr/local/bin/kubectl
           kubectl version --client=true
+      - name: List EKS clusters
+        shell: bash
+        run: aws eks list-clusters --region ${{ env.AWS_REGION }}
+
 
       - name: "Update kubeconfig"
         shell: bash
