@@ -22,7 +22,7 @@ module "vpc" {
 # --- ECR ---
 module "ecr" {
   source                  = "./modules/ecr"
-  repository_name         = local.name
+  repository_name         = var.name_prefix
   enable_lifecycle_policy = true
   lifecycle_policy = jsonencode({
     rules = [
