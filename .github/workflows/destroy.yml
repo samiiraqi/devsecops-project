@@ -36,15 +36,19 @@ jobs:
           role-to-assume: ${{ env.TERRAFORM_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 0) Clear any stale TF state lock row (best-effort)
+      # 0) Clear stale TF lock (best-effort)
       - name: "Clear stale DynamoDB lock (best-effort)"
         shell: bash
         continue-on-error: true
         run: |
-          LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
-          aws dynamodb delete-item --table-name "$TF_LOCK_TABLE" --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}"
+          for SUFFIX in "" "-md5"; do
+            aws dynamodb delete-item \
+              --region "$AWS_REGION" \
+              --table-name "$TF_LOCK_TABLE" \
+              --key "{\"LockID\":{\"S\":\"${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}${SUFFIX}\"}}" || true
+          done
 
-      # 1) Delete Kubernetes resources first (releases LoadBalancer)
+      # 1) Delete k8s objects to release the ELB
       - name: "Install kubectl"
         shell: bash
         run: |
@@ -61,10 +65,34 @@ jobs:
           if [ -d k8s ]; then
             kubectl delete -f k8s/ --ignore-not-found=true || true
           fi
-          # give time for ELB release
+          # give the LoadBalancer time to be released
           sleep 60
 
-      # 2) Purge ECR images so repository deletion won't fail
+      # 2) Delete EKS nodegroups FIRST (and wait) to free public IPs + allow IGW detach
+      - name: "Delete EKS nodegroups and wait"
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -e
+          if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+            NGS=$(aws eks list-nodegroups --cluster-name "$CLUSTER_NAME" --region "$AWS_REGION" --query 'nodegroups[]' --output text || true)
+            if [ -n "$NGS" ]; then
+              for ng in $NGS; do
+                echo "Deleting nodegroup: $ng"
+                aws eks delete-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name "$ng" --region "$AWS_REGION" || true
+              done
+              for ng in $NGS; do
+                echo "Waiting for nodegroup to be deleted: $ng"
+                aws eks wait nodegroup-deleted --cluster-name "$CLUSTER_NAME" --nodegroup-name "$ng" --region "$AWS_REGION" || true
+              done
+            else
+              echo "No nodegroups found (ok)."
+            fi
+          else
+            echo "Cluster not found (ok)."
+          fi
+
+      # 3) Purge all ECR images so repo deletion won't fail
       - name: "Purge all ECR images (best-effort)"
         shell: bash
         continue-on-error: true
@@ -90,7 +118,7 @@ jobs:
           done
           echo "ECR purge done (or repo absent)."
 
-      # 3) Terraform destroy with S3+Dynamo backend
+      # 4) Terraform destroy using S3+Dynamo backend (keep backend)
       - name: "Setup Terraform"
         uses: hashicorp/setup-terraform@v3
         with:
@@ -116,7 +144,6 @@ jobs:
             -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
             -backend-config="encrypt=true"
 
-      # keep backend bucket/table: drop storage module from STATE so destroy won't touch it
       - name: "Keep backend bucket: drop storage module from state"
         shell: bash
         continue-on-error: true
@@ -127,21 +154,24 @@ jobs:
               terraform -chdir=infra state rm "$addr" || true
             done
 
-      # single-step destroy (avoid plan exit-code weirdness in CI)
       - name: "Terraform Destroy"
         shell: bash
         run: |
           terraform -chdir=infra destroy -lock-timeout=10m -auto-approve
 
-      # 4) Clean up lock row again, just in case
+      # 5) Clean up TF lock rows again, just in case
       - name: "Delete DynamoDB lock row (best-effort)"
         shell: bash
         continue-on-error: true
         run: |
-          LOCK_KEY="${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}"
-          aws dynamodb delete-item --table-name "$TF_LOCK_TABLE" --key "{\"LockID\":{\"S\":\"$LOCK_KEY\"}}" >/dev/null 2>&1 || true
+          for SUFFIX in "" "-md5"; do
+            aws dynamodb delete-item \
+              --region "$AWS_REGION" \
+              --table-name "$TF_LOCK_TABLE" \
+              --key "{\"LockID\":{\"S\":\"${TF_BACKEND_BUCKET}/${TF_BACKEND_KEY}${SUFFIX}\"}}" >/dev/null 2>&1 || true
+          done
 
-      # 5) (Optional) delete backend itself
+      # 6) (Optional) delete backend itself
       - name: "Delete backend bucket & lock table (DANGEROUS)"
         if: ${{ github.event.inputs.delete_backend == 'yes' }}
         shell: bash
