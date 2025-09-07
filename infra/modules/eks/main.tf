@@ -9,7 +9,7 @@ resource "aws_iam_role" "cluster" {
       Action   = "sts:AssumeRole"
     }]
   })
-  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+  tags = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSClusterPolicy" {
@@ -28,7 +28,7 @@ resource "aws_iam_role" "node" {
       Action   = "sts:AssumeRole"
     }]
   })
-  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+  tags = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEKSWorkerNodePolicy" {
@@ -59,11 +59,9 @@ resource "aws_security_group" "cluster" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  #lifecycle {
-   # prevent_destroy = true
-  #}
+  
 
-  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+  tags = var.tags
 }
 
 # EKS Cluster
@@ -85,7 +83,7 @@ resource "aws_eks_cluster" "this" {
     public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
   }
 
-  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+  tags = var.tags
 }
 
 # Managed node group
@@ -102,7 +100,7 @@ resource "aws_eks_node_group" "default" {
     max_size     = var.max_size
   }
 
-  tags = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+  tags = var.tags
 }
 
 # ---- Access Entries with the SAME resource names as before ----
@@ -120,7 +118,7 @@ resource "aws_eks_access_entry" "github_admin" {
   cluster_name = aws_eks_cluster.this.name
   principal_arn = local.gh.principal_arn
   type         = "STANDARD"
-  tags         = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+  tags         = var.tags
 }
 
 resource "aws_eks_access_policy_association" "github_admin" {
@@ -140,7 +138,7 @@ resource "aws_eks_access_entry" "terraform_admin" {
   cluster_name = aws_eks_cluster.this.name
   principal_arn = local.tf.principal_arn
   type         = "STANDARD"
-  tags         = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+  tags         = var.tags
 }
 
 resource "aws_eks_access_policy_association" "terraform_admin" {
@@ -160,7 +158,7 @@ resource "aws_eks_access_entry" "sami_admin" {
   cluster_name = aws_eks_cluster.this.name
   principal_arn = local.sm.principal_arn
   type         = "STANDARD"
-  tags         = merge(var.tags, { Managed = "terraform", Project = "devsecops" })
+  tags         = var.tags
 }
 
 resource "aws_eks_access_policy_association" "sami_admin" {

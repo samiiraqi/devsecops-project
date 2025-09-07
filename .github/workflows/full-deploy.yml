@@ -112,16 +112,7 @@ jobs:
           mkdir -p infra
           printf 'terraform {\n  backend "s3" {}\n}\n' > infra/backend.tf
 
-      - name: "Write GitHub tfvars (auto)"
-        shell: bash
-        run: |
-          ORG="${GITHUB_REPOSITORY_OWNER}"
-          REPO="$(basename "$GITHUB_REPOSITORY")"
-          {
-            printf 'github_org      = "%s"\n' "$ORG"
-            printf 'github_repo     = "%s"\n' "$REPO"
-            printf 'github_branches = ["main"]\n'
-          } > infra/terraform.auto.tfvars
+      
 
       - name: "Terraform Init (S3 backend)"
         shell: bash
@@ -132,6 +123,7 @@ jobs:
             -backend-config="region=${AWS_REGION}" \
             -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
             -backend-config="encrypt=true"
+            
 
       - name: "Adopt existing VPC, subnets, and IGW (idempotent)"
         shell: bash

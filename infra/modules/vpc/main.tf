@@ -13,8 +13,7 @@ resource "aws_vpc" "this" {
 
   tags = merge(var.tags, {
     Name    = "${var.name}-vpc"
-    Managed = "terraform"
-    Project = "devsecops"
+    
   })
 }
 
@@ -28,8 +27,7 @@ resource "aws_subnet" "public" {
 
   tags = merge(var.tags, {
     Name    = "${var.name}-public-${each.key}"
-    Managed = "terraform"
-    Project = "devsecops"
+    
   })
 }
 
@@ -43,8 +41,7 @@ resource "aws_subnet" "private" {
 
   tags = merge(var.tags, {
     Name    = "${var.name}-private-${each.key}"
-    Managed = "terraform"
-    Project = "devsecops"
+    
   })
 }
 
@@ -53,8 +50,7 @@ resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.this.id
   tags = merge(var.tags, {
     Name    = "${var.name}-igw"
-    Managed = "terraform"
-    Project = "devsecops"
+    
   })
 }
 
@@ -68,8 +64,7 @@ resource "aws_route_table" "public" {
   }
   tags = merge(var.tags, {
     Name    = "${var.name}-public-rt-${each.key}"
-    Managed = "terraform"
-    Project = "devsecops"
+   
   })
 }
 
