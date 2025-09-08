@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>User Profile - Flask on EKS</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        input, button { padding: 10px; margin: 5px; }
+        button { background-color: #007bff; color: white; border: none; cursor: pointer; }
+        #result { margin-top: 20px; padding: 10px; background-color: #f8f9fa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>User Profile Feature</h1>
+        <p>Create and manage user profiles in your Flask app!</p>
+        
+        <div>
+            <h2>Create New User</h2>
+            <form id="userForm">
+                <div>
+                    <input type="text" id="username" placeholder="Enter username" required>
+                </div>
+                <div>
+                    <input type="email" id="email" placeholder="Enter email" required>
+                </div>
+                <button type="submit">Create User</button>
+            </form>
+        </div>
+        
+        <div>
+            <h2>Get User Profile</h2>
+            <input type="text" id="searchUsername" placeholder="Enter username to search">
+            <button onclick="getUser()">Search User</button>
+        </div>
+        
+        <div id="result"></div>
+        
+        <div style="margin-top: 30px;">
+            <a href="/">← Back to Home</a>
+        </div>
+    </div>
+    
+    <script>
+        // Create user function
+        document.getElementById('userForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
+            
+            try {
+                const response = await fetch(`/user/${username}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({email: email})
+                });
+                
+                const result = await response.json();
+                document.getElementById('result').innerHTML = 
+                    `<h3>Result:</h3><pre>${JSON.stringify(result, null, 2)}</pre>`;
+                    
+                // Clear form
+                document.getElementById('userForm').reset();
+            } catch (error) {
+                document.getElementById('result').innerHTML = 
+                    `<h3>Error:</h3><pre>${error.message}</pre>`;
+            }
+        });
+        
+        // Get user function
+        async function getUser() {
+            const username = document.getElementById('searchUsername').value;
+            if (!username) return;
+            
+            try {
+                const response = await fetch(`/user/${username}`);
+                const result = await response.json();
+                document.getElementById('result').innerHTML = 
+                    `<h3>User Profile:</h3><pre>${JSON.stringify(result, null, 2)}</pre>`;
+            } catch (error) {
+                document.getElementById('result').innerHTML = 
+                    `<h3>Error:</h3><pre>${error.message}</pre>`;
+            }
+        }
+    </script>
+</body>
+</html>
