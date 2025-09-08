@@ -112,8 +112,6 @@ jobs:
           mkdir -p infra
           printf 'terraform {\n  backend "s3" {}\n}\n' > infra/backend.tf
 
-      
-
       - name: "Terraform Init (S3 backend)"
         shell: bash
         run: |
@@ -123,7 +121,6 @@ jobs:
             -backend-config="region=${AWS_REGION}" \
             -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
             -backend-config="encrypt=true"
-            
 
       - name: "Adopt existing VPC, subnets, and IGW (idempotent)"
         shell: bash
@@ -245,7 +242,6 @@ jobs:
       - name: List EKS clusters
         shell: bash
         run: aws eks list-clusters --region ${{ env.AWS_REGION }}
-
 
       - name: "Update kubeconfig"
         shell: bash
