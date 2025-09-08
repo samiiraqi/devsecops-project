@@ -1,6 +1,6 @@
 # DevSecOps Pipeline Project
 
-Welcome to my DevSecOps Pipeline Project!  
+Welcome to our DevSecOps Pipeline Project!  
 This project demonstrates a comprehensive implementation of DevSecOps principles through a practical Python web application with a complete CI/CD pipeline that integrates security at every stage.
 
 ---
@@ -224,14 +224,14 @@ finalproj/
 │   ├── main.tf
 │   ├── variables.tf
 │   ├── outputs.tf
-│   └── providers.tf
+│   └── versions.tf
 ├── kubernetes/             # K8s manifests
 ├── Dockerfile              # Docker build file
 ├── requirements.txt        # Python deps
 └── README.md               # This file
 
 🧪 GitHub Actions Example
-The file .github/workflows/devsecops-pipeline.yml includes:
+The file .github/workflows/full-deploy.yml includes:
 
 Automated testing
 
