@@ -52,7 +52,7 @@ jobs:
         shell: bash
         run: |
           . venv/bin/activate
-          pytest -q
+          PYTHONPATH=. python -m pytest -q
 
       - name: "Security scan (bandit)"
         shell: bash

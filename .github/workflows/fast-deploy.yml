@@ -58,7 +58,7 @@ jobs:
       - name: Run tests
         run: |
           . venv/bin/activate
-          python -m pytest -q
+          PYTHONPATH=. python -m pytest -q
           
       - name: Security scan (bandit)
         run: |
