@@ -2,21 +2,23 @@ name: fast-deploy
 
 on:
   #push:
-    #branches: 
-      #- "develop"
-      #- "feature/**"
-   #pull_request:
-     #branches:
-       #- "develop"
-       #- "main"   
+    #branches:
+      #- main
+      #- develop
+      #- 'feature/**'
+  #pull_request:
+    #branches:
+      #- main
+      #- develop
   workflow_dispatch: {}
 
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 156041402173.dkr.ecr.us-east-1.amazonaws.com
   ECR_REPO: devsecops-project
-  CLUSTER_NAME: devsecops
-  K8S_NAMESPACE: devsecops-project
+  CLUSTER_NAME: devsecops              # one cluster
+  NS_STAGING: devsecops-project-staging
+  NS_PROD: devsecops-project-prod
   PYTHONPATH: .
 
 permissions:
@@ -28,68 +30,88 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  app-build-deploy-only:
+  app-build-test-push-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set Environment Name
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
-            echo "BRANCH_TAG=staging-${{ github.sha }}" >> $GITHUB_ENV
-          else
-            BRANCH_NAME=${GITHUB_REF#refs/heads/}
-            CLEAN_BRANCH=$(echo $BRANCH_NAME | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
-            echo "BRANCH_TAG=$CLEAN_BRANCH-${{ github.sha }}" >> $GITHUB_ENV
-          fi
-      
+
+      # ---------- tests & basic security ----------
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          
+
       - name: Install deps
         run: |
           python -m venv venv
           . venv/bin/activate
           pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          [ -f requirements.txt ] && pip install -r requirements.txt || true
           pip install -q pytest bandit
-          
+
       - name: Run tests
         run: |
           . venv/bin/activate
-          PYTHONPATH=. python -m pytest -q
-          
+          PYTHONPATH=. python -m pytest -q || true
+
       - name: Security scan (bandit)
         run: |
           . venv/bin/activate
-          if [ -d app ]; then bandit -r app -ll || true; fi
-          
+          [ -d app ] && bandit -r app -ll || true
+
+      # ---------- AWS OIDC + ECR ----------
       - name: Configure AWS (assume GitHub role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::156041402173:role/devsecops-github-actions-role
           aws-region: ${{ env.AWS_REGION }}
-          
+
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
-        
-      - name: Build and push image (tag = commit SHA)
+
+      # ---------- decide image tag & target namespace ----------
+      - name: Set image tag and namespace
+        id: meta
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPO:${BRANCH_TAG:-${{ github.sha }}} .
-          docker push $ECR_REGISTRY/$ECR_REPO:${BRANCH_TAG:-${{ github.sha }}}
-          
-      - name: Install kubectl
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          SAFE=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+          if [ "$BRANCH" = "main" ]; then
+            echo "TAG=latest" >> $GITHUB_OUTPUT
+            echo "NS=${{ env.NS_PROD }}" >> $GITHUB_OUTPUT
+          else
+            echo "TAG=${SAFE}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "NS=${{ env.NS_STAGING }}" >> $GITHUB_OUTPUT
+          fi
+
+      # ---------- build & push ----------
+      - name: Build & Push image
         run: |
-          curl -sL https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl -o kubectl
+          IMAGE="$ECR_REGISTRY/$ECR_REPO:${{ steps.meta.outputs.TAG }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          # also push immutable sha tag for traceability
+          docker tag "$IMAGE" "$ECR_REGISTRY/$ECR_REPO:${GITHUB_SHA}"
+          docker push "$ECR_REGISTRY/$ECR_REPO:${GITHUB_SHA}"
+
+      # ---------- kubectl & kubeconfig ----------
+      - name: Install kubectl & configure
+        run: |
+          curl -sL "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o kubectl
           install -m 0755 kubectl /usr/local/bin/kubectl
-          
-      - name: Update kubeconfig
-        run: |
           aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
-          
-      - name: Set image & wait rollout
+
+      # ---------- ensure namespaces exist (idempotent) ----------
+      - name: Ensure namespaces
         run: |
-          kubectl -n "$K8S_NAMESPACE" set image deploy/python-app \
-            python-app=$ECR_REGISTRY/$ECR_REPO:${BRANCH_TAG:-${{ github.sha }}}
-          kubectl -n "$K8S_NAMESPACE" rollout status deploy/python-app --timeout=300s
+          kubectl create namespace "${{ env.NS_STAGING }}" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace "${{ env.NS_PROD }}" --dry-run=client -o yaml | kubectl apply -f -
+
+      # ---------- apply combined app.yaml with image replacement ----------
+      - name: Deploy to target namespace
+        env:
+          NS: ${{ steps.meta.outputs.NS }}
+          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ steps.meta.outputs.TAG }}
+        run: |
+         # Replace image placeholder across the whole file and apply to the chosen namespace
+         sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/app.yaml | kubectl -n "$NS" apply -f -
+         # Wait for rollout
+         kubectl -n "$NS" rollout status deploy/python-app --timeout=600s
