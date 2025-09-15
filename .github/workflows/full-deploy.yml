@@ -1,15 +1,12 @@
 name: full-deploy
 
 on:
-  #push:
-    #branches: ["main"]
-    #paths:
-      #- "infra/**"
   workflow_dispatch: {}
 
 env:
   AWS_REGION: us-east-1
   ACCOUNT_ID: "156041402173"
+  CLUSTER_NAME: devsecops
   TF_BACKEND_BUCKET: devsecops-156041402173-us-east-1
   TF_BACKEND_KEY: tfstate/devsecops-project.tfstate
   TF_LOCK_TABLE: terraform-locks
@@ -30,17 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install deps
-        run: |
-          python -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip
-          pip install -q pytest bandit || true
 
       - name: Configure AWS (assume Terraform role)
         uses: aws-actions/configure-aws-credentials@v4

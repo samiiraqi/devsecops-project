@@ -16,7 +16,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 156041402173.dkr.ecr.us-east-1.amazonaws.com
   ECR_REPO: devsecops-project
-  CLUSTER_NAME: devsecops              # one cluster
+  CLUSTER_NAME: devsecops
   NS_STAGING: devsecops-project-staging
   NS_PROD: devsecops-project-prod
   PYTHONPATH: .
@@ -46,7 +46,7 @@ jobs:
           . venv/bin/activate
           pip install --upgrade pip
           [ -f requirements.txt ] && pip install -r requirements.txt || true
-          pip install -q pytest bandit
+          pip install -q pytest bandit || true
 
       - name: Run tests
         run: |
@@ -88,7 +88,7 @@ jobs:
           IMAGE="$ECR_REGISTRY/$ECR_REPO:${{ steps.meta.outputs.TAG }}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
-          # also push immutable sha tag for traceability
+          # also push immutable SHA tag for traceability
           docker tag "$IMAGE" "$ECR_REGISTRY/$ECR_REPO:${GITHUB_SHA}"
           docker push "$ECR_REGISTRY/$ECR_REPO:${GITHUB_SHA}"
 
@@ -99,7 +99,7 @@ jobs:
           install -m 0755 kubectl /usr/local/bin/kubectl
           aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
 
-      # ---------- ensure namespaces exist (idempotent) ----------
+      # ---------- ensure namespaces exist (safety: will be no-op if created already) ----------
       - name: Ensure namespaces
         run: |
           kubectl create namespace "${{ env.NS_STAGING }}" --dry-run=client -o yaml | kubectl apply -f -
@@ -111,7 +111,5 @@ jobs:
           NS: ${{ steps.meta.outputs.NS }}
           IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ steps.meta.outputs.TAG }}
         run: |
-         # Replace image placeholder across the whole file and apply to the chosen namespace
-         sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/app.yaml | kubectl -n "$NS" apply -f -
-         # Wait for rollout
-         kubectl -n "$NS" rollout status deploy/python-app --timeout=600s
+          sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/app.yaml | kubectl -n "$NS" apply -f -
+          kubectl -n "$NS" rollout status deploy/python-app --timeout=600s
