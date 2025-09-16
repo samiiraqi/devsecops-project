@@ -53,5 +53,8 @@ variable "github_repo" {
 
 variable "github_branches" {
   type    = list(string)
-  default = ["main"]
+  default = ["main", "develop", "feature/*"]
 }
+
+
+

@@ -15,7 +15,7 @@ env:
   TF_LOCK_TABLE: terraform-locks
   TF_INPUT: "false"
   PYTHONPATH: .
-  TERRAFORM_ROLE_ARN: arn:aws:iam::156041402173:role/devsecops-terraform-role
+  TERRAFORM_ROLE_ARN: arn:aws:iam::156041402173:role/devsecops-github-actions-role
 
 permissions:
   id-token: write

@@ -10,7 +10,6 @@ resource "aws_iam_openid_connect_provider" "github" {
   ]
 }
 
-
 data "aws_iam_policy_document" "assume_role" {
   statement {
     effect = "Allow"
@@ -40,6 +39,7 @@ resource "aws_iam_role" "github_actions" {
 }
 
 data "aws_iam_policy_document" "deploy" {
+  # --- App deployment: ECR & EKS ---
   statement {
     sid       = "ECRRepo"
     effect    = "Allow"
@@ -65,6 +65,52 @@ data "aws_iam_policy_document" "deploy" {
     sid       = "STSIdentity"
     effect    = "Allow"
     actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }
+
+  # --- Terraform: S3 backend ---
+  statement {
+    sid     = "TerraformS3"
+    effect  = "Allow"
+    actions = [
+      "s3:CreateBucket",
+      "s3:PutBucketVersioning",
+      "s3:GetBucketVersioning",
+      "s3:DeleteBucket",
+      "s3:ListBucket",
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject"
+    ]
+    resources = [
+      "arn:aws:s3:::devsecops-156041402173-us-east-1",
+      "arn:aws:s3:::devsecops-156041402173-us-east-1/*"
+    ]
+  }
+
+  # --- Terraform: DynamoDB lock table ---
+  statement {
+    sid     = "TerraformDynamoDB"
+    effect  = "Allow"
+    actions = [
+      "dynamodb:CreateTable",
+      "dynamodb:DescribeTable",
+      "dynamodb:PutItem",
+      "dynamodb:GetItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Scan",
+      "dynamodb:Query"
+    ]
+    resources = [
+      "arn:aws:dynamodb:us-east-1:156041402173:table/terraform-locks"
+    ]
+  }
+
+  # --- Terraform & EKS admin ---
+  statement {
+    sid       = "EksAdmin"
+    effect    = "Allow"
+    actions   = ["eks:*", "iam:PassRole"]
     resources = ["*"]
   }
 }

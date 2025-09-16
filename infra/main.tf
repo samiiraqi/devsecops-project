@@ -84,7 +84,7 @@ module "eks" {
       }
     }
     terraform_admin = {
-      principal_arn = "arn:aws:iam::156041402173:role/devsecops-terraform-role"
+      principal_arn = "arn:aws:iam::156041402173:role/devsecops-github-actions-role"
       policy_associations = {
         admin = {
           policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
