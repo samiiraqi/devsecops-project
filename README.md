@@ -233,9 +233,9 @@ finalproj/
 🧪 GitHub Actions Example
 The file .github/workflows/full-deploy.yml includes:
 
-Automated testing
+#Automated testing
 
-Security scanning
+#Security scanning
 
 Multi-env deployment (Terraform workspaces)
 

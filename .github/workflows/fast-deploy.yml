@@ -27,7 +27,7 @@ permissions:
 
 concurrency:
   group: deploy-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   app-build-test-push-deploy:
@@ -45,18 +45,18 @@ jobs:
           python -m venv venv
           . venv/bin/activate
           pip install --upgrade pip
-          [ -f requirements.txt ] && pip install -r requirements.txt || true
-          pip install -q pytest bandit || true
+          [ -f requirements.txt ] && pip install -r requirements.txt
+          pip install -q pytest bandit
 
       - name: Run tests
         run: |
           . venv/bin/activate
-          PYTHONPATH=. python -m pytest -q || true
+          PYTHONPATH=. python -m pytest -q
 
       - name: Security scan (bandit)
         run: |
           . venv/bin/activate
-          [ -d app ] && bandit -r app -ll || true
+          [ -d app ] && bandit -r app -ll
 
       # ---------- AWS OIDC + ECR ----------
       - name: Configure AWS (assume GitHub role)
@@ -74,10 +74,13 @@ jobs:
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
           SAFE=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+          echo "SHA=${GITHUB_SHA}" >> $GITHUB_OUTPUT
           if [ "$BRANCH" = "main" ]; then
-            echo "TAG=latest" >> $GITHUB_OUTPUT
+            # Use immutable commit SHA for production instead of `latest`
+            echo "TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
             echo "NS=${{ env.NS_PROD }}" >> $GITHUB_OUTPUT
           else
+            # Branch-specific tag that contains SHA (immutable)
             echo "TAG=${SAFE}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
             echo "NS=${{ env.NS_STAGING }}" >> $GITHUB_OUTPUT
           fi
@@ -88,9 +91,6 @@ jobs:
           IMAGE="$ECR_REGISTRY/$ECR_REPO:${{ steps.meta.outputs.TAG }}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
-          # also push immutable SHA tag for traceability
-          docker tag "$IMAGE" "$ECR_REGISTRY/$ECR_REPO:${GITHUB_SHA}"
-          docker push "$ECR_REGISTRY/$ECR_REPO:${GITHUB_SHA}"
 
       # ---------- kubectl & kubeconfig ----------
       - name: Install kubectl & configure

@@ -1,6 +1,9 @@
 name: full-deploy
 
 on:
+  #push:
+    #branches: [main]
+    #paths: ['infra/**']  # Only when infrastructure code changes
   workflow_dispatch: {}
 
 env:

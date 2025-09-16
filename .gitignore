@@ -1,17 +1,27 @@
-# Terraform
+# ---------------------------
+# Terraform / Infra
+# ---------------------------
 .terraform/
 *.tfstate
-*.tfstate.*
-crash.log
-tf.plan
-plan.json
+*.tfstate.backup
+*.backup
+*.plan
+tfplan
+.terraform.lock.hcl.backup
 
+# Optional test file from infra
+README.test
+
+# ---------------------------
 # Python / venv / tests
+# ---------------------------
 venv/
 myenv/
 __pycache__/
 .pytest_cache/
 *.pyc
 
-# OS
+# ---------------------------
+# OS / Editor
+# ---------------------------
 .DS_Store
