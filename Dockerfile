@@ -20,4 +20,4 @@ USER appuser
 # Expose port
 EXPOSE 5000
 # Run the application using the virtual environment
-CMD ["python", "-m" "app.main.py"]
+CMD ["python", "-m" "app.main"]

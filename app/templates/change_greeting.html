@@ -35,39 +35,49 @@
 
   <script>
     async function updateGreeting() {
-      const word = document.getElementById('wordInput').value || '';
-      const resultDiv = document.getElementById('result');
+  const word = document.getElementById('wordInput').value || '';
+  const resultDiv = document.getElementById('result');
 
-      if (!word.trim()) {
-        resultDiv.textContent = 'Please enter a greeting word';
-        resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
-        return;
-      }
+  if (!word.trim()) {
+    resultDiv.textContent = 'Please enter a greeting word';
+    resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
+    return;
+  }
 
-      try {
-        resultDiv.textContent = 'Updating...';
-        resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-gray-700 bg-gray-50 rounded-lg';
+  try {
+    resultDiv.textContent = 'Updating...';
+    resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-gray-700 bg-gray-50 rounded-lg';
 
-        const resp = await fetch('/greeting-word', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ word })
-        });
-        const data = await resp.json();
+    const resp = await fetch('/greeting-word', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ word })
+    });
+    const data = await resp.json();
 
-        if (resp.ok) {
-          resultDiv.textContent = data.message + ' - Redirecting in 3s';
-          resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-green-600 bg-green-50 rounded-lg';
-          setTimeout(()=>{ window.location.href = '/'; }, 3000);
-        } else {
-          resultDiv.textContent = data.error || 'Error updating greeting word';
-          resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
+    if (resp.ok) {
+      let countdown = 3;
+      resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-green-600 bg-green-50 rounded-lg';
+
+      const countdownInterval = setInterval(() => {
+        resultDiv.textContent = `${data.message} - Redirecting in ${countdown}s`;
+        countdown--;
+
+        if (countdown < 0) {
+          clearInterval(countdownInterval);
+          window.location.href = '/';
         }
-      } catch {
-        resultDiv.textContent = 'Error updating greeting word';
-        resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
-      }
+      }, 1000);
+    } else {
+      resultDiv.textContent = data.error || 'Error updating greeting word';
+      resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
     }
+  } catch {
+    resultDiv.textContent = 'Error updating greeting word';
+    resultDiv.className = 'mt-6 p-4 min-h-16 text-lg font-medium text-red-600 bg-red-50 rounded-lg';
+  }
+}
+
 
     document.getElementById('updateBtn').addEventListener('click', updateGreeting);
     document.getElementById('wordInput').addEventListener('keypress', (e)=>{ if (e.key === 'Enter') updateGreeting(); });

@@ -3,7 +3,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      # Leave version open; your lockfile will pin (v6 is OK)
+      version = "~> 5.50"
     }
   }
 }

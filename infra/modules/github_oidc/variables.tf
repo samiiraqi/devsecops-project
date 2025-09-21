@@ -1,4 +1,6 @@
-variable "role_name" { type = string }
+variable "role_name" { 
+  type = string
+   }
 
 variable "subjects" {
   type = list(string)

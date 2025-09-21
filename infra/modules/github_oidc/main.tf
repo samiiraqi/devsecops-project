@@ -48,7 +48,7 @@ data "aws_iam_policy_document" "deploy" {
   }
 
   statement {
-    sid       = "ECRAuth"
+    sid       = "ECRAuth" #sid is statement id
     effect    = "Allow"
     actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
@@ -76,6 +76,7 @@ data "aws_iam_policy_document" "deploy" {
       "s3:CreateBucket",
       "s3:PutBucketVersioning",
       "s3:GetBucketVersioning",
+      "s3:PutBucketPublicAccessBlock",
       "s3:DeleteBucket",
       "s3:ListBucket",
       "s3:GetObject",

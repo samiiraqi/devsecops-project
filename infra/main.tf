@@ -24,7 +24,7 @@ module "ecr" {
   source                  = "./modules/ecr"
   repository_name         =  "devsecops-project"
   enable_lifecycle_policy = true
-  lifecycle_policy = jsonencode({
+  /*lifecycle_policy = jsonencode({
     rules = [
       {
         rulePriority = 1
@@ -37,7 +37,7 @@ module "ecr" {
         action = { type = "expire" }
       }
     ]
-  })
+  })*/
   tags = var.tags
 }
 

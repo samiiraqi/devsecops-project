@@ -111,5 +111,26 @@ jobs:
           NS: ${{ steps.meta.outputs.NS }}
           IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ steps.meta.outputs.TAG }}
         run: |
-          sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/app.yaml | kubectl -n "$NS" apply -f -
+          sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml | kubectl -n "$NS" apply -f -
           kubectl -n "$NS" rollout status deploy/python-app --timeout=600s
+      
+      # ---------- apply combined app.yaml with image replacement ----------
+      - name: Deploy to target namespace
+        env:
+          NS: ${{ steps.meta.outputs.NS }}
+          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ steps.meta.outputs.TAG }}
+        run: |
+          sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml | kubectl -n "$NS" apply -f -
+          kubectl -n "$NS" rollout status deploy/python-app --timeout=600s
+
+      # -------------- Show deployment URL --------------
+      - name: Get deployment URL
+        run: |
+          echo "⏳ Waiting for load balancer..."
+          kubectl -n "${{ steps.meta.outputs.NS }}" wait --for=condition=ready --timeout=300s service/python-app-service || true
+          LB_URL=$(kubectl -n "${{ steps.meta.outputs.NS }}" get service python-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Load balancer not ready yet")
+          echo "🌐 Your app is available at: http://$LB_URL"
+          echo "### 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ steps.meta.outputs.NS }}" >> $GITHUB_STEP_SUMMARY
+          echo "**App URL:** http://$LB_URL" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ steps.meta.outputs.TAG }}" >> $GITHUB_STEP_SUMMARY    
