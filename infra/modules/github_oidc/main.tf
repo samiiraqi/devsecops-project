@@ -48,7 +48,7 @@ data "aws_iam_policy_document" "deploy" {
   }
 
   statement {
-    sid       = "ECRAuth" #sid is statement id
+    sid       = "ECRAuth"
     effect    = "Allow"
     actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
@@ -68,24 +68,16 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["*"]
   }
 
-  # --- Terraform: S3 backend ---
+  # --- S3 All Operations ---
   statement {
-    sid     = "TerraformS3"
+    sid     = "S3AllOperations"
     effect  = "Allow"
-    actions = [
-      "s3:CreateBucket",
-      "s3:PutBucketVersioning",
-      "s3:GetBucketVersioning",
-      "s3:PutBucketPublicAccessBlock",
-      "s3:DeleteBucket",
-      "s3:ListBucket",
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:DeleteObject"
-    ]
+    actions = ["s3:*"]
     resources = [
       "arn:aws:s3:::devsecops-156041402173-us-east-1",
-      "arn:aws:s3:::devsecops-156041402173-us-east-1/*"
+      "arn:aws:s3:::devsecops-156041402173-us-east-1/*",
+      "arn:aws:s3:::devsecops-project-app-156041402173-us-east-1",
+      "arn:aws:s3:::devsecops-project-app-156041402173-us-east-1/*"
     ]
   }
 
@@ -112,6 +104,59 @@ data "aws_iam_policy_document" "deploy" {
     sid       = "EksAdmin"
     effect    = "Allow"
     actions   = ["eks:*", "iam:PassRole"]
+    resources = ["*"]
+  }
+
+  # --- EC2 Operations ---
+  statement {
+    sid    = "EC2Operations"
+    effect = "Allow"
+    actions = ["ec2:*"]
+    resources = ["*"]
+  }
+
+  # --- IAM Operations ---
+statement {
+  sid    = "IAMOperations"
+  effect = "Allow"
+  actions = [
+    "iam:CreateRole",
+    "iam:DeleteRole", 
+    "iam:GetRole",
+    "iam:AttachRolePolicy",
+    "iam:DetachRolePolicy",
+    "iam:CreateOpenIDConnectProvider",
+    "iam:DeleteOpenIDConnectProvider",
+    "iam:GetOpenIDConnectProvider",
+    "iam:CreatePolicy",
+    "iam:GetPolicy",
+    "iam:GetPolicyVersion",
+    "iam:ListPolicyVersions",
+    "iam:DeletePolicy",
+    "iam:DeletePolicyVersion",
+    "iam:CreatePolicyVersion",
+    "iam:TagRole",
+    "iam:ListRolePolicies",
+    "iam:ListAttachedRolePolicies",
+    "iam:GetRolePolicy"
+  ]
+  resources = ["*"]
+}
+
+  # --- ECR Operations ---
+  statement {
+    sid    = "ECROperations"
+    effect = "Allow"
+    actions = [
+      "ecr:CreateRepository",
+      "ecr:DeleteRepository",
+      "ecr:PutLifecyclePolicy",
+      "ecr:GetLifecyclePolicy",
+      "ecr:DeleteLifecyclePolicy",
+      "ecr:ListTagsForResource",
+      "ecr:TagResource",
+      "ecr:UntagResource"
+    ]
     resources = ["*"]
   }
 }

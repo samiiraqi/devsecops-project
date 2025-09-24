@@ -108,7 +108,7 @@ resource "aws_eks_node_group" "default" {
 locals {
   ae = var.access_entries
   gh = try(var.access_entries.github_admin, null)
-  tf = try(var.access_entries.terraform_admin, null)
+  
   sm = try(var.access_entries.sami_admin, null)
 }
 
@@ -132,25 +132,9 @@ resource "aws_eks_access_policy_association" "github_admin" {
   }
 }
 
-# terraform_admin
-resource "aws_eks_access_entry" "terraform_admin" {
-  count        = local.tf != null ? 1 : 0
-  cluster_name = aws_eks_cluster.this.name
-  principal_arn = local.tf.principal_arn
-  type         = "STANDARD"
-  tags         = var.tags
-}
 
-resource "aws_eks_access_policy_association" "terraform_admin" {
-  count         = local.tf != null ? 1 : 0
-  cluster_name  = aws_eks_cluster.this.name
-  principal_arn = local.tf.principal_arn
-  policy_arn    = local.tf.policy_associations.admin.policy_arn
 
-  access_scope {
-    type = local.tf.policy_associations.admin.access_scope.type
-  }
-}
+
 
 # sami_admin
 resource "aws_eks_access_entry" "sami_admin" {
