@@ -15,8 +15,6 @@ def change_greeting():
 
 @app.route("/greet/<name>", methods=["GET"])
 def greet(name):
-    global greeting_word
-    greeting_word = "hello"  # Reset to default each time
     cleaned_name = clean_string(name)
     if not cleaned_name:
         return jsonify({"error": "Invalid name"}), 400
@@ -39,6 +37,5 @@ def health():
     # Your test expects "healthy"
     return jsonify({"status": "healthy"})
 
-# In app/__init__.py and app/main.py
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)  # nosec B104
