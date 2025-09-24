@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify, render_template
 from .utils import clean_string
 
 app = Flask(__name__)
-
 greeting_word = "hello"
 
 @app.route("/")
@@ -16,6 +15,8 @@ def change_greeting():
 
 @app.route("/greet/<name>", methods=["GET"])
 def greet(name):
+    global greeting_word
+    greeting_word = "hello"  # Reset to default each time
     cleaned_name = clean_string(name)
     if not cleaned_name:
         return jsonify({"error": "Invalid name"}), 400
@@ -26,12 +27,10 @@ def update_greeting():
     data = request.get_json()
     if not data or "word" not in data:
         return jsonify({"error": "Missing word parameter"}), 400
-
     global greeting_word
     cleaned_word = clean_string(data["word"])
     if not cleaned_word:
         return jsonify({"error": "Invalid word"}), 400
-
     greeting_word = cleaned_word
     return jsonify({"message": "Greeting word updated successfully"})
 
