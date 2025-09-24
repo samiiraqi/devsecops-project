@@ -16,7 +16,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 156041402173.dkr.ecr.us-east-1.amazonaws.com
   ECR_REPO: devsecops-project
-  CLUSTER_NAME: devsecops
+  CLUSTER_NAME: "devsecops-project"
   NS_STAGING: devsecops-project-staging
   NS_PROD: devsecops-project-prod
   PYTHONPATH: .
