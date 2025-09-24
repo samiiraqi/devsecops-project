@@ -6,8 +6,13 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  name     = var.name_prefix
-  subjects = [for b in var.github_branches : "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${b}"]
+  name = var.name_prefix
+  # Updated subjects to include feature branches
+  subjects = [
+    "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main",
+    "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/develop",
+    "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/feature/*"
+  ]
 }
 
 # --- VPC (no NAT) ---
