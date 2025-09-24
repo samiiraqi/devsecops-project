@@ -32,8 +32,20 @@ concurrency:
 jobs:
   app-build-test-push-deploy:
     runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.TAG }}
+      namespace: ${{ steps.meta.outputs.NS }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # Now the host runner(vm) has all our project files to work with
+
+      # ---------- Cache dependencies ----------
+      - name: Cache Python dependencies #Cache pip packages to speed up installs
+        uses: actions/cache@v3 #GitHub Cache = You manually add it for extra speed
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       # ---------- tests & basic security ----------
       - uses: actions/setup-python@v5
@@ -46,17 +58,24 @@ jobs:
           . venv/bin/activate
           pip install --upgrade pip
           [ -f requirements.txt ] && pip install -r requirements.txt
-          pip install -q pytest bandit
+          pip install -q pytest bandit safety
 
       - name: Run tests
         run: |
           . venv/bin/activate
-          PYTHONPATH=. python -m pytest -q
+          PYTHONPATH=. python -m pytest -v --tb=short
 
       - name: Security scan (bandit)
         run: |
           . venv/bin/activate
+          [ -d app ] && bandit -r app -ll -f json -o bandit-report.json || true
           [ -d app ] && bandit -r app -ll
+
+      - name: Check dependencies for vulnerabilities
+        run: |
+          . venv/bin/activate
+          safety check --json --output safety-report.json || true
+          safety check
 
       # ---------- AWS OIDC + ECR ----------
       - name: Configure AWS (assume GitHub role)
@@ -73,24 +92,39 @@ jobs:
         id: meta
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
-          SAFE=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+          SAFE=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+          SHORT_SHA=${GITHUB_SHA:0:8}
+          
           echo "SHA=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+          echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          
           if [ "$BRANCH" = "main" ]; then
-            # Use immutable commit SHA for production instead of `latest`
-            echo "TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "TAG=${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "NS=${{ env.NS_PROD }}" >> $GITHUB_OUTPUT
+            echo "ENV=production" >> $GITHUB_OUTPUT
           else
-            # Branch-specific tag that contains SHA (immutable)
-            echo "TAG=${SAFE}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "TAG=${SAFE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "NS=${{ env.NS_STAGING }}" >> $GITHUB_OUTPUT
+            echo "ENV=staging" >> $GITHUB_OUTPUT
           fi
 
       # ---------- build & push ----------
       - name: Build & Push image
         run: |
           IMAGE="$ECR_REGISTRY/$ECR_REPO:${{ steps.meta.outputs.TAG }}"
-          docker build -t "$IMAGE" .
+          echo "Building image: $IMAGE"
+          
+          # Build with build args for better caching
+          docker build \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --cache-from "$ECR_REGISTRY/$ECR_REPO:cache" \
+            -t "$IMAGE" \
+            -t "$ECR_REGISTRY/$ECR_REPO:cache" \
+            .
+          
           docker push "$IMAGE"
+          # Push cache layer (ignore failures)
+          docker push "$ECR_REGISTRY/$ECR_REPO:cache" || true
 
       # ---------- kubectl & kubeconfig ----------
       - name: Install kubectl & configure
@@ -99,38 +133,73 @@ jobs:
           install -m 0755 kubectl /usr/local/bin/kubectl
           aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
 
-      # ---------- ensure namespaces exist (safety: will be no-op if created already) ----------
+      # ---------- ensure namespaces exist ----------
       - name: Ensure namespaces
         run: |
-          kubectl create namespace "${{ env.NS_STAGING }}" --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create namespace "${{ env.NS_PROD }}" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace "${{ steps.meta.outputs.NS }}" --dry-run=client -o yaml | kubectl apply -f -
 
-      # ---------- apply combined app.yaml with image replacement ----------
-      - name: Deploy to target namespace
+      # ---------- deploy application ----------
+      - name: Deploy to ${{ steps.meta.outputs.ENV }}
         env:
           NS: ${{ steps.meta.outputs.NS }}
           IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ steps.meta.outputs.TAG }}
         run: |
+          echo "Deploying $IMAGE to namespace $NS"
+          
+          # Apply deployment with image substitution
           sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml | kubectl -n "$NS" apply -f -
+          
+          # Wait for rollout to complete
           kubectl -n "$NS" rollout status deploy/python-app --timeout=600s
-      
-      # ---------- apply combined app.yaml with image replacement ----------
-      - name: Deploy to target namespace
-        env:
-          NS: ${{ steps.meta.outputs.NS }}
-          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ steps.meta.outputs.TAG }}
-        run: |
-          sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml | kubectl -n "$NS" apply -f -
-          kubectl -n "$NS" rollout status deploy/python-app --timeout=600s
+          
+          # Verify deployment
+          kubectl -n "$NS" get pods -l app=python-app
 
-      # -------------- Show deployment URL --------------
+      # ---------- get service URL ----------
       - name: Get deployment URL
+        id: url
         run: |
-          echo "⏳ Waiting for load balancer..."
-          kubectl -n "${{ steps.meta.outputs.NS }}" wait --for=condition=ready --timeout=300s service/python-app-service || true
-          LB_URL=$(kubectl -n "${{ steps.meta.outputs.NS }}" get service python-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Load balancer not ready yet")
-          echo "🌐 Your app is available at: http://$LB_URL"
-          echo "### 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** ${{ steps.meta.outputs.NS }}" >> $GITHUB_STEP_SUMMARY
-          echo "**App URL:** http://$LB_URL" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ steps.meta.outputs.TAG }}" >> $GITHUB_STEP_SUMMARY    
+          echo "⏳ Waiting for service to be ready..."
+          
+          # Wait for service to have endpoints
+          kubectl -n "${{ steps.meta.outputs.NS }}" wait --for=condition=ready --timeout=60s endpoints/python-app-service || true
+          
+          # Get load balancer URL with retry
+          for i in {1..10}; do
+            LB_URL=$(kubectl -n "${{ steps.meta.outputs.NS }}" get service python-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+            if [ -n "$LB_URL" ]; then
+              break
+            fi
+            echo "Attempt $i: Load balancer not ready, waiting 30s..."
+            sleep 30
+          done
+          
+          if [ -z "$LB_URL" ]; then
+            LB_URL="Load balancer provisioning (may take 5-10 minutes)"
+            echo "⚠️ Load balancer not ready yet. Check AWS console for ELB status."
+          else
+            echo "✅ Load balancer ready!"
+          fi
+          
+          echo "url=$LB_URL" >> $GITHUB_OUTPUT
+          echo "🌐 Your app will be available at: http://$LB_URL"
+
+      # ---------- deployment summary ----------
+      - name: Deployment Summary
+        run: |
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          ## 🚀 Deployment Complete!
+          
+          | Property | Value |
+          |----------|-------|
+          | **Environment** | ${{ steps.meta.outputs.ENV }} |
+          | **Namespace** | ${{ steps.meta.outputs.NS }} |
+          | **Image Tag** | ${{ steps.meta.outputs.TAG }} |
+          | **App URL** | http://${{ steps.url.outputs.url }} |
+          | **Commit** | ${{ steps.meta.outputs.SHORT_SHA }} |
+          
+          ### Next Steps
+          - Monitor your deployment: \`kubectl -n ${{ steps.meta.outputs.NS }} get pods\`
+          - View logs: \`kubectl -n ${{ steps.meta.outputs.NS }} logs -l app=python-app\`
+          - If load balancer is still provisioning, check the AWS ELB console
+          EOF
