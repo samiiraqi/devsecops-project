@@ -33,17 +33,17 @@ resource "aws_iam_role" "node" {
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEKSWorkerNodePolicy" {
   role       = aws_iam_role.node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy" # needed for nodes
 }
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEKS_CNI_Policy" {
   role       = aws_iam_role.node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy" # needed for VPC CNI
 }
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryReadOnly" {
   role       = aws_iam_role.node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly" # needed for pulling images
 }
 
 # Keep the cluster Security Group managed to avoid "destroy" in plan
